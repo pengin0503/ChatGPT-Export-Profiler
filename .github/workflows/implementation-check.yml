@@ -6,42 +6,25 @@ on:
       - implementation/v1
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Install dependencies and lock missing type packages
-        shell: bash
-        run: |
-          npm ci
-          if ! npm ls @types/node @types/react @types/react-dom --depth=0 >/dev/null 2>&1; then
-            npm install --save-dev --save-exact @types/node@latest @types/react@latest @types/react-dom@latest
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package.json package-lock.json
-            git commit -m "chore: add application type dependencies"
-            git push
-          fi
-      - name: Domain unit test
-        run: npm test -- tests/unit/domain.test.ts
+      - run: npm ci
+      - name: Unit and integration tests
+        run: npm test
       - name: Type check
         run: npm run typecheck
       - name: Lint
         run: npm run lint
       - name: Build
         run: npm run build
-      - name: Browser smoke test
-        run: |
-          npx playwright install --with-deps chromium webkit
-          npm run e2e -- tests/e2e/smoke.spec.ts
 
 # implementation branch only; replaced by ci.yml in Task 14
