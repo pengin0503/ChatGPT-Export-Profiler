@@ -125,8 +125,9 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
 
   await page.getByRole('button', { name: 'Tools' }).click();
   await expect(page.getByRole('heading', { name: 'Tools / Web', exact: true })).toBeVisible();
-  await expect(page.getByText('web-search', { exact: true })).toBeVisible();
-  await expect(page.getByText('python', { exact: true })).toBeVisible();
+  const toolRows = page.locator('.table-wrap tbody tr');
+  await expect(toolRows.filter({ hasText: 'web-search' })).toHaveCount(1);
+  await expect(toolRows.filter({ hasText: 'python' })).toHaveCount(1);
 
   await page.getByRole('button', { name: 'Data quality' }).click();
   await expect(page.getByRole('heading', { name: 'Data quality', exact: true })).toBeVisible();
