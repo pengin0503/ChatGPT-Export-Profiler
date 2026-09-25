@@ -1,8 +1,25 @@
+import { useState } from 'react';
 import { navigationItems } from './navigation';
 import { useI18n } from '../i18n';
+import { ImportPage } from '../features/import/ImportPage';
+import type { ImportSummary } from '../features/import/useImportSession';
+
+type ActivePage = 'import' | 'overview';
+
+interface CompletedAnalysis {
+  analysisId: string;
+  summary: ImportSummary;
+}
 
 export function App() {
   const { locale, setLocale, t } = useI18n();
+  const [activePage, setActivePage] = useState<ActivePage>('import');
+  const [completed, setCompleted] = useState<CompletedAnalysis | undefined>(undefined);
+
+  const handleComplete = (analysisId: string, summary: ImportSummary) => {
+    setCompleted({ analysisId, summary });
+    setActivePage('overview');
+  };
 
   return (
     <div className="app-shell">
@@ -10,18 +27,28 @@ export function App() {
         <div className="brand-mark" aria-hidden="true">CEP</div>
         <nav>
           <ul className="nav-list">
-            {navigationItems.map((item) => (
-              <li key={item.id}>
-                <button
-                  className={item.id === 'import' ? 'nav-item nav-item-active' : 'nav-item'}
-                  type="button"
-                  disabled={item.requiresAnalysis}
-                  title={item.requiresAnalysis ? t('status.notReady') : undefined}
-                >
-                  {t(item.labelKey)}
-                </button>
-              </li>
-            ))}
+            {navigationItems.map((item) => {
+              const supported = item.id === 'import' || item.id === 'overview';
+              const disabled = !supported || (item.requiresAnalysis && !completed);
+              const active = item.id === activePage;
+              return (
+                <li key={item.id}>
+                  <button
+                    className={active ? 'nav-item nav-item-active' : 'nav-item'}
+                    type="button"
+                    disabled={disabled}
+                    title={disabled ? t('status.notReady') : undefined}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => {
+                      if (item.id === 'import') setActivePage('import');
+                      if (item.id === 'overview' && completed) setActivePage('overview');
+                    }}
+                  >
+                    {t(item.labelKey)}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </nav>
       </aside>
@@ -42,21 +69,28 @@ export function App() {
           </label>
         </header>
 
-        <section className="privacy-card" aria-label="Privacy">
-          <span className="privacy-dot" aria-hidden="true" />
-          <p data-testid="privacy-copy">{t('privacy.local')}</p>
-        </section>
+        {activePage === 'import' ? <ImportPage onComplete={handleComplete} /> : null}
 
-        <section className="empty-state" aria-labelledby="import-heading">
-          <div className="empty-state-icon" aria-hidden="true">ZIP</div>
-          <div>
-            <h2 id="import-heading">{t('import.action')}</h2>
-            <p>{t('import.empty')}</p>
-          </div>
-          <button type="button" className="primary-action" disabled>
-            {t('import.action')}
-          </button>
-        </section>
+        {activePage === 'overview' && completed ? (
+          <section className="overview-placeholder" aria-labelledby="overview-heading">
+            <p className="eyebrow">ANALYSIS {completed.analysisId.slice(0, 8)}</p>
+            <h2 id="overview-heading">{t('nav.overview')}</h2>
+            <div className="overview-metrics">
+              <article>
+                <strong>{completed.summary.conversations}</strong>
+                <span>{completed.summary.conversations === 1 ? 'conversation' : 'conversations'}</span>
+              </article>
+              <article>
+                <strong>{completed.summary.messages}</strong>
+                <span>messages</span>
+              </article>
+              <article>
+                <strong>{completed.summary.visibleTokens}</strong>
+                <span>visible tokens</span>
+              </article>
+            </div>
+          </section>
+        ) : null}
       </main>
     </div>
   );
