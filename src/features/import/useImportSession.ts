@@ -9,6 +9,7 @@ import {
   type ImportCheckpoint
 } from '../../storage/repositories';
 import { inspectExportZip } from '../../import/zipInspector';
+import { loadEffectivePerformanceProfile, loadZipSafetyPolicy } from '../settings/preferences';
 
 export interface ImportSummary {
   conversations: number;
@@ -77,30 +78,21 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
 
     return controller.subscribe((event) => {
       if (event.type === 'PROGRESS') {
-        setState((current) => {
-          if (current.status !== 'running') return current;
-          return {
-            ...current,
-            stage: event.stage,
-            processedConversations: event.processedConversations
-          };
-        });
+        setState((current) => current.status === 'running'
+          ? { ...current, stage: event.stage, processedConversations: event.processedConversations }
+          : current);
         return;
       }
-
       if (event.type === 'WARNING') {
-        setState((current) => {
-          if (current.status !== 'running') return current;
-          return { ...current, warnings: [...current.warnings, event.code] };
-        });
+        setState((current) => current.status === 'running'
+          ? { ...current, warnings: [...current.warnings, event.code] }
+          : current);
         return;
       }
-
       if (event.type === 'FAIL') {
         setState({ status: 'failed', code: event.code, messageKey: event.messageKey });
         return;
       }
-
       if (event.type === 'COMPLETE' && event.source === 'analysis') {
         void readSummary(event.analysisId)
           .then((summary) => setState({ status: 'complete', analysisId: event.analysisId, summary }))
@@ -112,95 +104,84 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
   useEffect(() => {
     if (!enabled) return;
     let active = true;
-
-    void analysisRepository
-      .list()
-      .then(async (analyses) => {
-        const checkpoints = await Promise.all(analyses.map((analysis) => checkpointRepository.load(analysis.id)));
-        const latest = checkpoints
-          .filter((checkpoint): checkpoint is ImportCheckpoint => checkpoint !== undefined)
-          .sort((a, b) => b.updatedAt - a.updatedAt)[0];
-        if (active && latest) setState({ status: 'recoverable', checkpoint: latest });
-      })
-      .catch(() => undefined);
-
-    return () => {
-      active = false;
-    };
+    void analysisRepository.list().then(async (analyses) => {
+      const checkpoints = await Promise.all(analyses.map((analysis) => checkpointRepository.load(analysis.id)));
+      const latest = checkpoints
+        .filter((checkpoint): checkpoint is ImportCheckpoint => checkpoint !== undefined)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      if (active && latest) setState({ status: 'recoverable', checkpoint: latest });
+    }).catch(() => undefined);
+    return () => { active = false; };
   }, [enabled]);
 
-  const startFresh = useCallback(
-    async (file: File): Promise<void> => {
-      const analysisId = crypto.randomUUID();
+  const startFresh = useCallback(async (file: File): Promise<void> => {
+    const analysisId = crypto.randomUUID();
+    setState({
+      status: 'running',
+      analysisId,
+      stage: 'inspection',
+      processedConversations: 0,
+      startedAt: Date.now(),
+      warnings: []
+    });
+    try {
+      const [profile, zipSafetyPolicy] = await Promise.all([
+        loadEffectivePerformanceProfile(),
+        loadZipSafetyPolicy()
+      ]);
+      await controller.start(file, { profile, analysisId, zipSafetyPolicy });
+    } catch (error) {
+      setState(failureState(error));
+    }
+  }, [controller]);
+
+  const selectFile = useCallback(async (file: File): Promise<void> => {
+    const checkpoint = state.status === 'recoverable'
+      ? state.checkpoint
+      : state.status === 'cancelled' ? state.checkpoint : undefined;
+
+    if (checkpoint) {
       setState({
         status: 'running',
-        analysisId,
-        stage: 'inspection',
-        processedConversations: 0,
+        analysisId: checkpoint.analysisId,
+        stage: checkpoint.stage,
+        processedConversations: checkpoint.processedConversations,
         startedAt: Date.now(),
         warnings: []
       });
       try {
-        await controller.start(file, { profile: 'standard', analysisId });
+        const [profile, zipSafetyPolicy] = await Promise.all([
+          loadEffectivePerformanceProfile(),
+          loadZipSafetyPolicy()
+        ]);
+        await controller.resume(file, checkpoint, { profile, zipSafetyPolicy });
       } catch (error) {
         setState(failureState(error));
       }
-    },
-    [controller]
-  );
+      return;
+    }
 
-  const selectFile = useCallback(
-    async (file: File): Promise<void> => {
-      const checkpoint =
-        state.status === 'recoverable' ? state.checkpoint : state.status === 'cancelled' ? state.checkpoint : undefined;
-
-      if (checkpoint) {
-        setState({
-          status: 'running',
-          analysisId: checkpoint.analysisId,
-          stage: checkpoint.stage,
-          processedConversations: checkpoint.processedConversations,
-          startedAt: Date.now(),
-          warnings: []
-        });
-        try {
-          await controller.resume(file, checkpoint);
-        } catch (error) {
-          setState(failureState(error));
-        }
+    setState({ status: 'inspecting' });
+    try {
+      const zipSafetyPolicy = await loadZipSafetyPolicy();
+      const inspection = await inspectExportZip(file, zipSafetyPolicy);
+      if (!inspection.ok || !inspection.conversationEntry) {
+        setState({ status: 'failed', code: 'ZIP_SAFETY_BLOCKED', messageKey: 'import.zipSafetyBlocked' });
         return;
       }
 
-      setState({ status: 'inspecting' });
-      try {
-        const inspection = await inspectExportZip(file);
-        if (!inspection.ok || !inspection.conversationEntry) {
-          setState({ status: 'failed', code: 'ZIP_SAFETY_BLOCKED', messageKey: 'import.zipSafetyBlocked' });
-          return;
-        }
-
-        const fingerprint = await fingerprintImport(file, inspection);
-        const analyses = await analysisRepository.list();
-        const existing = analyses.find(
-          (analysis) => analysis.status === 'complete' && analysis.fingerprint === fingerprint.hash
-        );
-        if (existing) {
-          setState({
-            status: 'duplicate',
-            file,
-            existingAnalysisId: existing.id,
-            fingerprint: fingerprint.hash
-          });
-          return;
-        }
-
-        await startFresh(file);
-      } catch (error) {
-        setState(failureState(error));
+      const fingerprint = await fingerprintImport(file, inspection);
+      const analyses = await analysisRepository.list();
+      const existing = analyses.find((analysis) => analysis.status === 'complete' && analysis.fingerprint === fingerprint.hash);
+      if (existing) {
+        setState({ status: 'duplicate', file, existingAnalysisId: existing.id, fingerprint: fingerprint.hash });
+        return;
       }
-    },
-    [controller, startFresh, state]
-  );
+      await startFresh(file);
+    } catch (error) {
+      setState(failureState(error));
+    }
+  }, [controller, startFresh, state]);
 
   const cancel = useCallback(() => {
     controller.cancel();

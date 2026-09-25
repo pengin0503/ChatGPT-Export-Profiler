@@ -1,5 +1,5 @@
 import { fingerprintImport, type ImportFingerprint } from '../../analysis/fingerprint';
-import { inspectExportZip, type ZipInspection } from '../../import/zipInspector';
+import { inspectExportZip, type ZipInspection, type ZipSafetyPolicy } from '../../import/zipInspector';
 import {
   type PipelineMessage,
   type PerformanceProfileName,
@@ -17,6 +17,12 @@ export interface WorkerPort {
 export interface ImportStartOptions {
   profile: PerformanceProfileName;
   analysisId?: string;
+  zipSafetyPolicy?: ZipSafetyPolicy;
+}
+
+export interface ImportResumeOptions {
+  profile?: PerformanceProfileName;
+  zipSafetyPolicy?: ZipSafetyPolicy;
 }
 
 export interface ImportSessionStartResult {
@@ -27,7 +33,7 @@ export interface ImportSessionStartResult {
 export type ImportControllerEvent = Exclude<PipelineMessage, StartImportMessage>;
 
 interface ImportControllerDependencies {
-  inspectZip(file: Blob): Promise<ZipInspection>;
+  inspectZip(file: Blob, policy?: ZipSafetyPolicy): Promise<ZipInspection>;
   fingerprintImport(file: Blob, inspection: ZipInspection): Promise<ImportFingerprint>;
   createImportWorker(): WorkerPort;
   createAnalysisWorker(): WorkerPort;
@@ -76,7 +82,7 @@ export class ImportController {
   }
 
   async start(file: Blob, options: ImportStartOptions): Promise<ImportSessionStartResult> {
-    const inspection = await this.dependencies.inspectZip(file);
+    const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
     if (!inspection.ok || !inspection.conversationEntry) {
       throw new ImportPipelineError('ZIP_SAFETY_BLOCKED', 'inspection', 'import.zipSafetyBlocked');
     }
@@ -100,8 +106,8 @@ export class ImportController {
     return { analysisId, fingerprint };
   }
 
-  async resume(file: Blob, checkpoint: ImportCheckpoint): Promise<ImportSessionStartResult> {
-    const inspection = await this.dependencies.inspectZip(file);
+  async resume(file: Blob, checkpoint: ImportCheckpoint, options: ImportResumeOptions = {}): Promise<ImportSessionStartResult> {
+    const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
     if (!inspection.ok || !inspection.conversationEntry) {
       throw new ImportPipelineError('ZIP_SAFETY_BLOCKED', 'inspection', 'import.zipSafetyBlocked');
     }
@@ -112,7 +118,7 @@ export class ImportController {
     }
 
     this.latestCheckpoint = { ...checkpoint };
-    this.beginWorkers(file, checkpoint.analysisId, fingerprint.hash, 'standard', checkpoint);
+    this.beginWorkers(file, checkpoint.analysisId, fingerprint.hash, options.profile ?? 'standard', checkpoint);
     return { analysisId: checkpoint.analysisId, fingerprint };
   }
 
@@ -188,12 +194,8 @@ export class ImportController {
   }
 
   private shutdownWorkers(): void {
-    if (this.importWorker && this.importListener) {
-      this.importWorker.removeEventListener('message', this.importListener);
-    }
-    if (this.analysisWorker && this.analysisListener) {
-      this.analysisWorker.removeEventListener('message', this.analysisListener);
-    }
+    if (this.importWorker && this.importListener) this.importWorker.removeEventListener('message', this.importListener);
+    if (this.analysisWorker && this.analysisListener) this.analysisWorker.removeEventListener('message', this.analysisListener);
     this.importWorker?.terminate();
     this.analysisWorker?.terminate();
     this.importWorker = undefined;

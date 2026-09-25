@@ -7,20 +7,37 @@ import { OverviewPage } from '../features/overview/OverviewPage';
 import { ModelsPage } from '../features/models/ModelsPage';
 import { TimelinePage } from '../features/timeline/TimelinePage';
 import { ConversationsPage } from '../features/conversations/ConversationsPage';
+import { CostPage } from '../features/cost/CostPage';
+import { ToolsPage } from '../features/tools/ToolsPage';
+import { DataQualityPage } from '../features/data-quality/DataQualityPage';
+import { ComparisonPage } from '../features/comparison/ComparisonPage';
+import { SettingsPage } from '../features/settings/SettingsPage';
 
-type ActivePage = 'import' | 'overview' | 'models' | 'timeline' | 'conversations';
+type ActivePage =
+  | 'import'
+  | 'overview'
+  | 'models'
+  | 'timeline'
+  | 'conversations'
+  | 'cost'
+  | 'tools'
+  | 'comparison'
+  | 'data-quality'
+  | 'settings';
 
 interface CompletedAnalysis {
   analysisId: string;
   summary: ImportSummary;
 }
 
-const supportedPages = new Set<ActivePage>(['import', 'overview', 'models', 'timeline', 'conversations']);
+const supportedPages = new Set<ActivePage>([
+  'import', 'overview', 'models', 'timeline', 'conversations', 'cost', 'tools', 'comparison', 'data-quality', 'settings'
+]);
 
 export function App() {
   const { locale, setLocale, t } = useI18n();
   const [activePage, setActivePage] = useState<ActivePage>('import');
-  const [completed, setCompleted] = useState<CompletedAnalysis | undefined>(undefined);
+  const [completed, setCompleted] = useState<CompletedAnalysis>();
 
   const handleComplete = (analysisId: string, summary: ImportSummary) => {
     setCompleted({ analysisId, summary });
@@ -79,6 +96,19 @@ export function App() {
         {completed && activePage === 'models' ? <ModelsPage analysisId={completed.analysisId} /> : null}
         {completed && activePage === 'timeline' ? <TimelinePage analysisId={completed.analysisId} /> : null}
         {completed && activePage === 'conversations' ? <ConversationsPage analysisId={completed.analysisId} /> : null}
+        {completed && activePage === 'cost' ? <CostPage analysisId={completed.analysisId} /> : null}
+        {completed && activePage === 'tools' ? <ToolsPage analysisId={completed.analysisId} /> : null}
+        {completed && activePage === 'data-quality' ? <DataQualityPage analysisId={completed.analysisId} /> : null}
+        {completed && activePage === 'comparison' ? <ComparisonPage analysisId={completed.analysisId} /> : null}
+        {activePage === 'settings' ? (
+          <SettingsPage
+            analysisId={completed?.analysisId}
+            onAnalysisDeleted={() => {
+              setCompleted(undefined);
+              setActivePage('import');
+            }}
+          />
+        ) : null}
       </main>
     </div>
   );

@@ -29,6 +29,25 @@ function qualityRecord(snapshot: QualitySnapshot): Record<string, unknown> {
   };
 }
 
+function toolRecords(message: BatchMessage): AnalysisOwnedRecord[] {
+  const counts = new Map<string, { kind: string; rawType: string; count: number }>();
+  for (const conversation of message.conversations) {
+    for (const normalizedMessage of conversation.messages) {
+      for (const event of normalizedMessage.toolEvents) {
+        const key = `${event.kind}\u0000${event.rawType}`;
+        const current = counts.get(key) ?? { kind: event.kind, rawType: event.rawType, count: 0 };
+        current.count += 1;
+        counts.set(key, current);
+      }
+    }
+  }
+  return [...counts.values()].map((value) => ({
+    analysisId: message.analysisId,
+    localKey: `${message.batchId}:${value.kind}:${encodeURIComponent(value.rawType)}`,
+    value
+  }));
+}
+
 async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
   const aggregator = createAggregator();
   for (const conversation of message.conversations) await aggregator.acceptConversation(conversation);
@@ -97,12 +116,13 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
   const db = await openProfilerDb();
   try {
     const tx = db.transaction(
-      ['conversationMetrics', 'modelMetrics', 'timelineMetrics', 'dataQuality', 'checkpoints'],
+      ['conversationMetrics', 'modelMetrics', 'timelineMetrics', 'toolMetrics', 'dataQuality', 'checkpoints'],
       'readwrite'
     );
     for (const record of conversationRecords) await tx.objectStore('conversationMetrics').put(record);
     for (const record of modelRecords) await tx.objectStore('modelMetrics').put(record);
     for (const record of timelineRecords) await tx.objectStore('timelineMetrics').put(record);
+    for (const record of toolRecords(message)) await tx.objectStore('toolMetrics').put(record);
     await tx.objectStore('dataQuality').put({ analysisId: message.analysisId, value: qualityRecord(message.quality) });
     await tx.objectStore('checkpoints').put(checkpoint);
     await tx.done;
