@@ -107,8 +107,8 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
 
   await page.getByRole('button', { name: 'Models' }).click();
   await expect(page.getByRole('heading', { name: 'Models', exact: true })).toBeVisible();
-  await expect(page.getByText('gpt-6-sol', { exact: true })).toBeVisible();
-  await expect(page.getByText('gpt-5.6-luna', { exact: true })).toBeVisible();
+  await expect(page.locator('table.analytics-table tbody tr').filter({ hasText: 'gpt-6-sol' })).toHaveCount(1);
+  await expect(page.locator('table.analytics-table tbody tr').filter({ hasText: 'gpt-5.6-luna' })).toHaveCount(1);
 
   await page.getByRole('button', { name: 'Conversations' }).click();
   await expect(page.getByRole('heading', { name: 'Conversations', exact: true })).toBeVisible();
