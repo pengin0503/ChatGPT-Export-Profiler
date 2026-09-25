@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ImportSessionState } from './useImportSession';
 
 export interface ImportProgressProps {
@@ -6,7 +7,16 @@ export interface ImportProgressProps {
 }
 
 export function ImportProgress({ state, onCancel }: ImportProgressProps) {
-  const elapsedSeconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const updateElapsed = () => {
+      setElapsedSeconds(Math.max(0, Math.round((Date.now() - state.startedAt) / 1000)));
+    };
+    updateElapsed();
+    const timer = globalThis.setInterval(updateElapsed, 1_000);
+    return () => globalThis.clearInterval(timer);
+  }, [state.startedAt]);
 
   return (
     <section className="import-progress" aria-live="polite" aria-labelledby="import-progress-heading">
