@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
-import { openProfilerDb } from '../../storage/db';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { analysisRepository, type AnalysisRecord } from '../../storage/repositories';
 
 interface StoragePanelProps {
   analysisId?: string;
+  protectedAnalysisId?: string;
   onAnalysisDeleted?(): void;
 }
 
@@ -18,67 +19,86 @@ function formatBytes(value?: number): string {
   return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-async function deleteAnalysis(analysisId: string): Promise<void> {
-  const db = await openProfilerDb();
-  try {
-    const conversationKeys = await db.getAllKeysFromIndex('conversations', 'by-analysis', analysisId);
-    const metricKeys = await db.getAllKeysFromIndex('conversationMetrics', 'by-analysis', analysisId);
-    const modelKeys = await db.getAllKeysFromIndex('modelMetrics', 'by-analysis', analysisId);
-    const timelineKeys = await db.getAllKeysFromIndex('timelineMetrics', 'by-analysis', analysisId);
-    const toolKeys = await db.getAllKeysFromIndex('toolMetrics', 'by-analysis', analysisId);
-    const tx = db.transaction(
-      ['analyses', 'conversations', 'conversationMetrics', 'modelMetrics', 'timelineMetrics', 'toolMetrics', 'dataQuality', 'checkpoints'],
-      'readwrite'
-    );
-    for (const key of conversationKeys) await tx.objectStore('conversations').delete(key);
-    for (const key of metricKeys) await tx.objectStore('conversationMetrics').delete(key);
-    for (const key of modelKeys) await tx.objectStore('modelMetrics').delete(key);
-    for (const key of timelineKeys) await tx.objectStore('timelineMetrics').delete(key);
-    for (const key of toolKeys) await tx.objectStore('toolMetrics').delete(key);
-    await tx.objectStore('analyses').delete(analysisId);
-    await tx.objectStore('dataQuality').delete(analysisId);
-    await tx.objectStore('checkpoints').delete(analysisId);
-    await tx.done;
-  } finally {
-    db.close();
-  }
-}
-
-export function StoragePanel({ analysisId, onAnalysisDeleted }: StoragePanelProps) {
+export function StoragePanel({ analysisId, protectedAnalysisId, onAnalysisDeleted }: StoragePanelProps) {
   const [usage, setUsage] = useState<number>();
   const [quota, setQuota] = useState<number>();
+  const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);
   const [status, setStatus] = useState<string>();
+
+  const refresh = useCallback(async (): Promise<void> => {
+    const [stored, estimate] = await Promise.all([
+      analysisRepository.list(),
+      navigator.storage?.estimate ? navigator.storage.estimate() : Promise.resolve(undefined)
+    ]);
+    setAnalyses(stored);
+    setUsage(estimate?.usage);
+    setQuota(estimate?.quota);
+  }, []);
 
   useEffect(() => {
     let active = true;
-    if (navigator.storage?.estimate) {
-      void navigator.storage.estimate().then((estimate) => {
-        if (!active) return;
-        setUsage(estimate.usage);
-        setQuota(estimate.quota);
-      });
-    }
+    void Promise.all([
+      analysisRepository.list(),
+      navigator.storage?.estimate ? navigator.storage.estimate() : Promise.resolve(undefined)
+    ]).then(([stored, estimate]) => {
+      if (!active) return;
+      setAnalyses(stored);
+      setUsage(estimate?.usage);
+      setQuota(estimate?.quota);
+    }).catch(() => undefined);
     return () => { active = false; };
   }, []);
+
+  const priorAnalyses = useMemo(
+    () => analyses.filter((analysis) => analysis.id !== analysisId && analysis.id !== protectedAnalysisId),
+    [analyses, analysisId, protectedAnalysisId]
+  );
+
+  async function removeAnalysis(id: string): Promise<void> {
+    await analysisRepository.delete(id);
+    setStatus(id === analysisId ? 'Deleted the current local analysis.' : 'Deleted a stored local analysis.');
+    if (id === analysisId) onAnalysisDeleted?.();
+    await refresh();
+  }
 
   return (
     <section className="panel" aria-labelledby="storage-heading">
       <h3 id="storage-heading">Storage</h3>
       <p className="muted-copy">Browser storage: {formatBytes(usage)} used of {formatBytes(quota)} available quota.</p>
-      {analysisId ? (
+      {protectedAnalysisId ? (
+        <p className="muted-copy">The paused import and its durable checkpoint are protected while you remove older analyses.</p>
+      ) : null}
+      {analysisId && analysisId !== protectedAnalysisId ? (
         <button
           type="button"
           className="danger-action"
-          onClick={() => {
-            void deleteAnalysis(analysisId).then(() => {
-              setStatus('Deleted the current local analysis.');
-              onAnalysisDeleted?.();
-            });
-          }}
+          onClick={() => void removeAnalysis(analysisId)}
         >
           Delete current analysis
         </button>
-      ) : <p className="muted-copy">No active analysis is selected.</p>}
+      ) : null}
+      <div className="storage-analysis-list">
+        <h4>Stored prior analyses</h4>
+        {priorAnalyses.length === 0 ? (
+          <p className="muted-copy">No other stored analyses are available to delete.</p>
+        ) : (
+          <ul className="compact-list">
+            {priorAnalyses.map((analysis, index) => (
+              <li key={analysis.id}>
+                <span>{analysis.status === 'complete' ? 'Completed' : 'Incomplete'} local analysis</span>{' '}
+                <button
+                  type="button"
+                  className="danger-action"
+                  aria-label={`Delete stored analysis ${index + 1}`}
+                  onClick={() => void removeAnalysis(analysis.id)}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       {status ? <p className="success-note" role="status">{status}</p> : null}
     </section>
   );
