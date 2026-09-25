@@ -48,13 +48,42 @@ test('imports a synthetic export locally and opens Overview', async ({ page }) =
     buffer
   });
 
-  await expect
-    .poll(() => page.locator('body').innerText(), { timeout: 30_000 })
-    .toContain('Overview');
+  await page.waitForTimeout(2_000);
+  const workers = page.workers().map((worker) => worker.url());
+  const databaseState = await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('chatgpt-export-profiler');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
 
+    const readAll = <T,>(storeName: string) =>
+      new Promise<T[]>((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const request = tx.objectStore(storeName).getAll();
+        request.onsuccess = () => resolve(request.result as T[]);
+        request.onerror = () => reject(request.error);
+      });
+
+    const [analyses, checkpoints, conversationMetrics] = await Promise.all([
+      readAll<{ status?: string }>('analyses'),
+      readAll<unknown>('checkpoints'),
+      readAll<unknown>('conversationMetrics')
+    ]);
+    db.close();
+    return {
+      analysisStatuses: analyses.map((analysis) => analysis.status ?? 'unknown'),
+      checkpointCount: checkpoints.length,
+      conversationMetricCount: conversationMetrics.length
+    };
+  });
+
+  console.log('WORKERS', JSON.stringify(workers));
+  console.log('DB_STATE', JSON.stringify(databaseState));
   console.log('PAGE_ERRORS', JSON.stringify(pageErrors));
-  console.log('OVERVIEW_BODY', JSON.stringify(await page.locator('body').innerText()));
+  console.log('BODY_AFTER_2S', JSON.stringify(await page.locator('body').innerText()));
 
+  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/1 conversation/i)).toBeVisible();
   await expect(page.getByText(/2 messages/i)).toBeVisible();
 });
