@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { navigationItems } from './navigation';
 import { useI18n } from '../i18n';
 import { ImportPage } from '../features/import/ImportPage';
-import type { ImportSummary } from '../features/import/useImportSession';
+import { useImportSession, type ImportSummary } from '../features/import/useImportSession';
 import { OverviewPage } from '../features/overview/OverviewPage';
 import { ModelsPage } from '../features/models/ModelsPage';
 import { TimelinePage } from '../features/timeline/TimelinePage';
@@ -38,6 +38,10 @@ export function App() {
   const { locale, setLocale, t } = useI18n();
   const [activePage, setActivePage] = useState<ActivePage>('import');
   const [completed, setCompleted] = useState<CompletedAnalysis>();
+  const importSession = useImportSession();
+  const protectedAnalysisId = importSession.state.status === 'storage-pressure'
+    ? importSession.state.checkpoint.analysisId
+    : undefined;
 
   const handleComplete = (analysisId: string, summary: ImportSummary) => {
     setCompleted({ analysisId, summary });
@@ -91,7 +95,13 @@ export function App() {
           </label>
         </header>
 
-        {activePage === 'import' ? <ImportPage onComplete={handleComplete} /> : null}
+        {activePage === 'import' ? (
+          <ImportPage
+            session={importSession}
+            onComplete={handleComplete}
+            onManageStorage={() => setActivePage('settings')}
+          />
+        ) : null}
         {completed && activePage === 'overview' ? <OverviewPage analysisId={completed.analysisId} /> : null}
         {completed && activePage === 'models' ? <ModelsPage analysisId={completed.analysisId} /> : null}
         {completed && activePage === 'timeline' ? <TimelinePage analysisId={completed.analysisId} /> : null}
@@ -103,6 +113,7 @@ export function App() {
         {activePage === 'settings' ? (
           <SettingsPage
             analysisId={completed?.analysisId}
+            protectedAnalysisId={protectedAnalysisId}
             onAnalysisDeleted={() => {
               setCompleted(undefined);
               setActivePage('import');
