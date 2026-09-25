@@ -7,10 +7,11 @@ import { loadSetting, saveSetting, type ZipSafetyPreference } from './preference
 
 interface SettingsPageProps {
   analysisId?: string;
+  protectedAnalysisId?: string;
   onAnalysisDeleted?(): void;
 }
 
-export function SettingsPage({ analysisId, onAnalysisDeleted }: SettingsPageProps) {
+export function SettingsPage({ analysisId, protectedAnalysisId, onAnalysisDeleted }: SettingsPageProps) {
   const { locale, setLocale } = useI18n();
   const [zipPolicy, setZipPolicy] = useState<ZipSafetyPreference>('default');
   const [rawAlias, setRawAlias] = useState('');
@@ -82,7 +83,11 @@ export function SettingsPage({ analysisId, onAnalysisDeleted }: SettingsPageProp
         </section>
       </div>
       <PricingEditor />
-      <StoragePanel analysisId={analysisId} onAnalysisDeleted={onAnalysisDeleted} />
+      <StoragePanel
+        analysisId={analysisId}
+        protectedAnalysisId={protectedAnalysisId}
+        onAnalysisDeleted={onAnalysisDeleted}
+      />
     </section>
   );
 }
