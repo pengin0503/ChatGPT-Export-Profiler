@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_ZIP_SAFETY, inspectExportZip } from '../../src/import/zipInspector';
 import { makeZip } from '../helpers/makeZip';
