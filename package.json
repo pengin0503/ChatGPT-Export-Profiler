@@ -12,8 +12,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "test:performance": "playwright test --config=playwright.performance.config.ts",
     "make:offline": "node scripts/make-offline-package.mjs",
-    "serve:offline": "node scripts/serve-offline.mjs"
+    "serve:offline": "node scripts/serve-offline.mjs",
+    "make:fixture:1k": "node scripts/generate-large-fixture.mjs --conversations 1000 --output tests/fixtures/generated-1k.zip",
+    "make:fixture:10k": "node scripts/generate-large-fixture.mjs --conversations 10000 --output tests/fixtures/generated-10k.zip",
+    "make:fixture:50k": "node scripts/generate-large-fixture.mjs --conversations 50000 --output tests/fixtures/generated-50k.zip"
   },
   "dependencies": {
     "@tanstack/react-virtual": "3.14.13",
