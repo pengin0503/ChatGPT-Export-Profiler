@@ -28,7 +28,7 @@ jobs:
         run: npm run build
       - name: Install E2E browsers
         run: npx playwright install --with-deps chromium webkit
-      - name: Chromium import timing diagnostic
-        run: npx playwright test tests/e2e/import-flow.spec.ts --project=chromium --timeout=60000
+      - name: Import flow E2E
+        run: npm run e2e -- tests/e2e/import-flow.spec.ts
 
 # implementation branch only; replaced by ci.yml in Task 14
