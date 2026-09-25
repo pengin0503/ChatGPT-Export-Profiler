@@ -65,7 +65,6 @@ export function CostPage({ analysisId }: CostPageProps) {
 
   useEffect(() => {
     let active = true;
-    setLoaded(false);
     void Promise.all([getModelMetrics(analysisId), loadPricing()])
       .then(([modelRows, pricingRows]) => {
         if (!active) return;
