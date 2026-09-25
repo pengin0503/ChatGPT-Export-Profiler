@@ -43,10 +43,10 @@ sw.addEventListener('fetch', (event) => {
   if (requestUrl.origin !== sw.location.origin) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(caches.match(appShellUrl).then((cached) => cached ?? fetch(request)));
+    event.respondWith(caches.match(appShellUrl, { ignoreVary: true }).then((cached) => cached ?? fetch(request)));
     return;
   }
 
   if (!precacheUrlSet.has(requestUrl.href)) return;
-  event.respondWith(caches.match(request).then((cached) => cached ?? fetch(request)));
+  event.respondWith(caches.match(request, { ignoreVary: true }).then((cached) => cached ?? fetch(request)));
 });
