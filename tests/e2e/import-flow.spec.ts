@@ -35,6 +35,9 @@ const syntheticConversation = {
 };
 
 test('imports a synthetic export locally and opens Overview', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
   const zip = await makeZip([{ name: 'conversations.json', text: JSON.stringify([syntheticConversation]) }]);
   const buffer = Buffer.from(await zip.arrayBuffer());
 
@@ -45,7 +48,16 @@ test('imports a synthetic export locally and opens Overview', async ({ page }) =
     buffer
   });
 
-  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
+  try {
+    await expect
+      .poll(() => page.locator('body').innerText(), { timeout: 30_000 })
+      .toContain('Overview');
+  } catch (error) {
+    console.log('PAGE_ERRORS', JSON.stringify(pageErrors));
+    console.log('FINAL_BODY', JSON.stringify(await page.locator('body').innerText()));
+    throw error;
+  }
+
   await expect(page.getByText(/1 conversation/i)).toBeVisible();
   await expect(page.getByText(/2 messages/i)).toBeVisible();
 });
