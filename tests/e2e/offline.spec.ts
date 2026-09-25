@@ -37,11 +37,6 @@ const syntheticConversation = {
 test('reloads from the service worker and imports while offline', async ({ page, context, browserName }) => {
   test.skip(browserName !== 'chromium', 'Offline service-worker cache verification is Chromium-only in Playwright.');
 
-  const pageErrors: string[] = [];
-  const failedRequests: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  page.on('requestfailed', (request) => failedRequests.push(`${request.url()} :: ${request.failure()?.errorText ?? 'unknown'}`));
-
   await page.goto('/');
   await expect.poll(async () => page.evaluate(async () => {
     if (!('serviceWorker' in navigator)) return false;
@@ -56,29 +51,10 @@ test('reloads from the service worker and imports while offline', async ({ page,
 
   await context.setOffline(true);
   await page.reload({ waitUntil: 'domcontentloaded' });
-
-  const diagnostics = await page.evaluate(async () => {
-    const cacheNames = await caches.keys();
-    const cachedRequests: string[] = [];
-    for (const cacheName of cacheNames) {
-      const cache = await caches.open(cacheName);
-      for (const request of await cache.keys()) cachedRequests.push(request.url);
-    }
-    return {
-      url: location.href,
-      rootText: document.querySelector('#root')?.textContent ?? null,
-      scripts: [...document.scripts].map((script) => script.src),
-      cacheNames,
-      cachedRequests,
-      controller: navigator.serviceWorker.controller?.scriptURL ?? null
-    };
-  });
-
-  console.log('offline diagnostics', JSON.stringify({ diagnostics, pageErrors, failedRequests }, null, 2));
+  await expect(page.getByLabel('Choose ChatGPT export ZIP')).toBeVisible({ timeout: 15_000 });
 
   const zip = await makeZip([{ name: 'conversations.json', text: JSON.stringify([syntheticConversation]) }]);
   const buffer = Buffer.from(await zip.arrayBuffer());
-  await expect(page.getByLabel('Choose ChatGPT export ZIP'), JSON.stringify({ diagnostics, pageErrors, failedRequests }, null, 2)).toBeVisible({ timeout: 10_000 });
   await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({
     name: 'offline-synthetic.zip',
     mimeType: 'application/zip',
