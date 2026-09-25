@@ -3,6 +3,7 @@ import type { QualitySnapshot } from '../analysis/quality';
 import type { BatchMessage, PipelineMessage, StartImportMessage } from '../import/pipelineProtocol';
 import { openProfilerDb } from '../storage/db';
 import type { AnalysisOwnedRecord, ConversationMetricRecord, ImportCheckpoint } from '../storage/db';
+import { isQuotaExceededError } from '../storage/quota';
 
 interface WorkerScope {
   postMessage(message: PipelineMessage): void;
@@ -11,6 +12,7 @@ interface WorkerScope {
 
 const scope = self as unknown as WorkerScope;
 let activeStart: StartImportMessage | undefined;
+let latestCheckpoint: ImportCheckpoint | undefined;
 let cancelled = false;
 let work = Promise.resolve();
 
@@ -139,6 +141,7 @@ async function handleBatch(message: BatchMessage): Promise<void> {
   }
 
   const checkpoint = await persistBatch(message);
+  latestCheckpoint = { ...checkpoint };
   if (cancelled) return;
   scope.postMessage({
     type: 'PROGRESS',
@@ -164,18 +167,30 @@ async function finalizeAnalysis(analysisId: string): Promise<void> {
 
 function reportFailure(error: unknown): void {
   if (cancelled) return;
-  scope.postMessage({
-    type: 'FAIL',
-    code: 'ANALYSIS_WORKER_FAILED',
-    stage: 'aggregation',
-    messageKey: error instanceof Error ? 'import.analysisFailed' : 'import.analysisFailed'
-  });
+  if (isQuotaExceededError(error)) {
+    scope.postMessage({
+      type: 'FAIL',
+      code: 'STORAGE_QUOTA_EXCEEDED',
+      stage: 'aggregation',
+      messageKey: 'import.storageFull',
+      checkpoint: latestCheckpoint ? { ...latestCheckpoint } : undefined
+    });
+  } else {
+    scope.postMessage({
+      type: 'FAIL',
+      code: 'ANALYSIS_WORKER_FAILED',
+      stage: 'aggregation',
+      messageKey: 'import.analysisFailed'
+    });
+  }
+  cancelled = true;
 }
 
 scope.addEventListener('message', (event) => {
   const message = event.data;
   if (message.type === 'START_IMPORT') {
     activeStart = message;
+    latestCheckpoint = message.checkpoint ? { ...message.checkpoint } : undefined;
     cancelled = false;
     work = Promise.resolve();
     return;
