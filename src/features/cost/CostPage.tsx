@@ -136,7 +136,7 @@ export function CostPage({ analysisId }: CostPageProps) {
               label="Visible-token API-equivalent cost"
               value={money(visible.cost)}
               provenance="calculated"
-              detail={visible.gaps.length ? `Coverage gap: no applicable historical price for ${visible.gaps.join(', ')}.` : 'All observed model/date pairs have pricing coverage.'}
+              detail={visible.gaps.length ? `No applicable historical price for ${visible.gaps.join(', ')}.` : 'All observed model/date pairs have pricing coverage.'}
             />
             {scenario ? (
               <MetricBadge
