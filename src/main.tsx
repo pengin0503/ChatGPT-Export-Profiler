@@ -4,12 +4,11 @@ import { App } from './app/App';
 import { AppProviders } from './app/AppProviders';
 import './styles/tokens.css';
 import './styles/globals.css';
+import './styles/analytics.css';
 
 const root = document.getElementById('root');
 
-if (!root) {
-  throw new Error('Root element #root was not found.');
-}
+if (!root) throw new Error('Root element #root was not found.');
 
 createRoot(root).render(
   <StrictMode>

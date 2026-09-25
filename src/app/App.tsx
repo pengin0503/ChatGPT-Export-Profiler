@@ -3,13 +3,19 @@ import { navigationItems } from './navigation';
 import { useI18n } from '../i18n';
 import { ImportPage } from '../features/import/ImportPage';
 import type { ImportSummary } from '../features/import/useImportSession';
+import { OverviewPage } from '../features/overview/OverviewPage';
+import { ModelsPage } from '../features/models/ModelsPage';
+import { TimelinePage } from '../features/timeline/TimelinePage';
+import { ConversationsPage } from '../features/conversations/ConversationsPage';
 
-type ActivePage = 'import' | 'overview';
+type ActivePage = 'import' | 'overview' | 'models' | 'timeline' | 'conversations';
 
 interface CompletedAnalysis {
   analysisId: string;
   summary: ImportSummary;
 }
+
+const supportedPages = new Set<ActivePage>(['import', 'overview', 'models', 'timeline', 'conversations']);
 
 export function App() {
   const { locale, setLocale, t } = useI18n();
@@ -28,7 +34,7 @@ export function App() {
         <nav>
           <ul className="nav-list">
             {navigationItems.map((item) => {
-              const supported = item.id === 'import' || item.id === 'overview';
+              const supported = supportedPages.has(item.id as ActivePage);
               const disabled = !supported || (item.requiresAnalysis && !completed);
               const active = item.id === activePage;
               return (
@@ -40,8 +46,7 @@ export function App() {
                     title={disabled ? t('status.notReady') : undefined}
                     aria-current={active ? 'page' : undefined}
                     onClick={() => {
-                      if (item.id === 'import') setActivePage('import');
-                      if (item.id === 'overview' && completed) setActivePage('overview');
+                      if (supported && (!item.requiresAnalysis || completed)) setActivePage(item.id as ActivePage);
                     }}
                   >
                     {t(item.labelKey)}
@@ -70,27 +75,10 @@ export function App() {
         </header>
 
         {activePage === 'import' ? <ImportPage onComplete={handleComplete} /> : null}
-
-        {activePage === 'overview' && completed ? (
-          <section className="overview-placeholder" aria-labelledby="overview-heading">
-            <p className="eyebrow">ANALYSIS {completed.analysisId.slice(0, 8)}</p>
-            <h2 id="overview-heading">{t('nav.overview')}</h2>
-            <div className="overview-metrics">
-              <article>
-                <strong>
-                  {completed.summary.conversations}{' '}
-                  {completed.summary.conversations === 1 ? 'conversation' : 'conversations'}
-                </strong>
-              </article>
-              <article>
-                <strong>{completed.summary.messages} messages</strong>
-              </article>
-              <article>
-                <strong>{completed.summary.visibleTokens} visible tokens</strong>
-              </article>
-            </div>
-          </section>
-        ) : null}
+        {completed && activePage === 'overview' ? <OverviewPage analysisId={completed.analysisId} /> : null}
+        {completed && activePage === 'models' ? <ModelsPage analysisId={completed.analysisId} /> : null}
+        {completed && activePage === 'timeline' ? <TimelinePage analysisId={completed.analysisId} /> : null}
+        {completed && activePage === 'conversations' ? <ConversationsPage analysisId={completed.analysisId} /> : null}
       </main>
     </div>
   );

@@ -28,7 +28,7 @@ jobs:
         run: npm run build
       - name: Install E2E browsers
         run: npx playwright install --with-deps chromium webkit
-      - name: Import flow E2E
-        run: npm run e2e -- tests/e2e/import-flow.spec.ts
+      - name: Import and analytics E2E
+        run: npm run e2e -- tests/e2e/import-flow.spec.ts tests/e2e/analytics-pages.spec.ts
 
 # implementation branch only; replaced by ci.yml in Task 14

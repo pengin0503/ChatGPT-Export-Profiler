@@ -2,7 +2,7 @@ import { createAggregator } from '../analysis/aggregate';
 import type { QualitySnapshot } from '../analysis/quality';
 import type { BatchMessage, PipelineMessage, StartImportMessage } from '../import/pipelineProtocol';
 import { openProfilerDb } from '../storage/db';
-import type { ConversationMetricRecord, ImportCheckpoint } from '../storage/repositories';
+import type { AnalysisOwnedRecord, ConversationMetricRecord, ImportCheckpoint } from '../storage/db';
 
 interface WorkerScope {
   postMessage(message: PipelineMessage): void;
@@ -31,11 +31,10 @@ function qualityRecord(snapshot: QualitySnapshot): Record<string, unknown> {
 
 async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
   const aggregator = createAggregator();
-  for (const conversation of message.conversations) {
-    await aggregator.acceptConversation(conversation);
-  }
+  for (const conversation of message.conversations) await aggregator.acceptConversation(conversation);
   const result = aggregator.finish();
-  const records: ConversationMetricRecord[] = result.conversations.map((conversation) => ({
+
+  const conversationRecords: ConversationMetricRecord[] = result.conversations.map((conversation) => ({
     analysisId: message.analysisId,
     conversationId: conversation.id,
     title: conversation.title,
@@ -52,6 +51,40 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
     hasTools: conversation.hasTools
   }));
 
+  const modelRecords: AnalysisOwnedRecord[] = Object.values(result.byModel).map((model) => ({
+    analysisId: message.analysisId,
+    localKey: `${message.batchId}:${model.modelId}`,
+    value: {
+      modelId: model.modelId,
+      messages: model.messages,
+      conversations: model.conversations,
+      visibleTokens: model.visibleTokens,
+      inputTokens: model.inputTokens,
+      outputTokens: model.outputTokens,
+      otherTokens: model.otherTokens,
+      rawAliases: [...model.rawAliases],
+      firstTimestamp: model.firstTimestamp,
+      lastTimestamp: model.lastTimestamp
+    }
+  }));
+
+  const timelineRecords: AnalysisOwnedRecord[] = [];
+  for (const kind of ['hour', 'day', 'week', 'month', 'year'] as const) {
+    for (const [key, bucket] of Object.entries(result.buckets[kind])) {
+      timelineRecords.push({
+        analysisId: message.analysisId,
+        localKey: `${message.batchId}:${kind}:${key}`,
+        value: {
+          kind,
+          key,
+          messages: bucket.messages,
+          conversations: bucket.conversations,
+          visibleTokens: bucket.visibleTokens
+        }
+      });
+    }
+  }
+
   const checkpoint: ImportCheckpoint = {
     analysisId: message.analysisId,
     fingerprint: message.fingerprint,
@@ -63,8 +96,13 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
 
   const db = await openProfilerDb();
   try {
-    const tx = db.transaction(['conversationMetrics', 'dataQuality', 'checkpoints'], 'readwrite');
-    for (const record of records) await tx.objectStore('conversationMetrics').put(record);
+    const tx = db.transaction(
+      ['conversationMetrics', 'modelMetrics', 'timelineMetrics', 'dataQuality', 'checkpoints'],
+      'readwrite'
+    );
+    for (const record of conversationRecords) await tx.objectStore('conversationMetrics').put(record);
+    for (const record of modelRecords) await tx.objectStore('modelMetrics').put(record);
+    for (const record of timelineRecords) await tx.objectStore('timelineMetrics').put(record);
     await tx.objectStore('dataQuality').put({ analysisId: message.analysisId, value: qualityRecord(message.quality) });
     await tx.objectStore('checkpoints').put(checkpoint);
     await tx.done;
@@ -123,18 +161,12 @@ scope.addEventListener('message', (event) => {
     return;
   }
   if (message.type === 'BATCH') {
-    work = work.then(() => handleBatch(message)).catch((error: unknown) => {
-      reportFailure(error);
-    });
+    work = work.then(() => handleBatch(message)).catch((error: unknown) => reportFailure(error));
     return;
   }
   if (message.type === 'COMPLETE' && message.source === 'import') {
-    work = work.then(() => finalizeAnalysis(message.analysisId)).catch((error: unknown) => {
-      reportFailure(error);
-    });
+    work = work.then(() => finalizeAnalysis(message.analysisId)).catch((error: unknown) => reportFailure(error));
     return;
   }
-  if (message.type === 'CANCEL') {
-    cancelled = true;
-  }
+  if (message.type === 'CANCEL') cancelled = true;
 });
