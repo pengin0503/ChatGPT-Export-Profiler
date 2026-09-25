@@ -45,3 +45,5 @@ jobs:
           npm run build
           npx playwright install --with-deps chromium webkit
           npm run e2e -- tests/e2e/smoke.spec.ts
+
+# implementation branch only; replaced by ci.yml in Task 14
