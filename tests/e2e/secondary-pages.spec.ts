@@ -59,7 +59,7 @@ test('opens cost, tools, quality, comparison, and settings after local import', 
 
   await page.getByRole('button', { name: 'Data quality' }).click();
   await expect(page.getByRole('heading', { name: 'Data quality', exact: true })).toBeVisible();
-  await expect(page.getByText('future_schema_flag', { exact: true })).toBeVisible();
+  await expect(page.getByRole('listitem').filter({ hasText: 'future_schema_flag' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Comparison' }).click();
   await expect(page.getByRole('heading', { name: 'Comparison', exact: true })).toBeVisible();
