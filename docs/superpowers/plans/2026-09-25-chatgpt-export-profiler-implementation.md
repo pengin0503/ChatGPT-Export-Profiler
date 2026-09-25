@@ -28,8 +28,8 @@
 ## Review Focus
 
 1. **A ZIP whose `conversations.json` contains braces, brackets, quotes, escaped quotes, and Unicode inside strings** must stream-split into the same objects as whole-file JSON parsing; Task 5 adds adversarial parser tests.
-2. **A malformed conversation among valid conversations** must be recorded as recoverable data-quality damage without discarding valid neighbors; Task 4 adds mixed-validity fixture tests.
-3. **An unknown model and an unknown tool type** must remain queryable as unknown/raw values instead of being mapped to a known model/tool; Tasks 2 and 4 pin this behavior.
+2. **A malformed conversation among valid conversations** must be recorded as recoverable data-quality damage without discarding valid neighbors; Task 3 adds mixed-validity fixture tests.
+3. **An unknown model and an unknown tool type** must remain queryable as unknown/raw values instead of being mapped to a known model/tool; Tasks 2 and 3 pin this behavior.
 4. **A resumed import with a different ZIP selected** must refuse checkpoint reuse until the source fingerprint matches; Task 7 adds mismatch tests.
 5. **No analysis path may call `fetch`, XHR, `sendBeacon`, WebSocket, or a third-party URL**; Tasks 12 and 14 add CSP/network E2E assertions.
 
@@ -66,6 +66,7 @@ src/
   storage/
     db.ts                           IndexedDB schema/opening
     repositories.ts                 persistence API
+    analyticsQueries.ts             bounded analytics read models
   data/
     modelAliases.ts                 built-in alias records
     pricing.v1.ts                   versioned built-in pricing data
@@ -97,9 +98,11 @@ tests/
   unit/
   integration/
   e2e/
+  performance/
 scripts/
   generate-large-fixture.mjs
   make-offline-package.mjs
+  serve-offline.mjs
 .github/workflows/
   ci.yml
   pages.yml
@@ -157,7 +160,7 @@ Use a Vite React TypeScript project and install only the initial dependencies re
 }
 ```
 
-Install current stable compatible releases of React, React DOM, TypeScript, Vite, Vitest, Testing Library, Playwright, ESLint, `@zip.js/zip.js`, `js-tiktoken`, `idb`, `@tanstack/react-virtual`, and `vite-plugin-pwa`. Commit the generated lockfile.
+Install current stable compatible releases of React, React DOM, TypeScript, Vite, Vitest, Testing Library, Playwright, ESLint, `@zip.js/zip.js`, `js-tiktoken`, `idb`, `@tanstack/react-virtual`, `fake-indexeddb`, and `vite-plugin-pwa`. Commit the generated lockfile.
 
 - [ ] **Step 2: Write the failing provenance/domain test**
 
@@ -336,7 +339,7 @@ export interface CostAssumptions {
 }
 ```
 
-Reject ratios outside `0..1` and negative token counts. `calculateScenarioCost` returns calculated lower/upper values with the assumptions used rather than labeling them observed.
+Reject ratios outside `0..1` and negative token counts. `calculateScenarioCost` returns lower/upper values plus the assumptions and marks the result as estimated at the view-model boundary.
 
 - [ ] **Step 5: Add built-in alias/pricing data as data-only modules**
 
@@ -374,7 +377,7 @@ git commit -m "feat: add model and pricing engines"
 
 - [ ] **Step 1: Write fixtures that cover a valid tree, malformed node, unknown model, and unknown tool**
 
-Keep fixture text synthetic, e.g. `"Synthetic message A"`; never paste a real export conversation.
+Keep fixture text synthetic, for example `"Synthetic message A"`; never paste a real export conversation.
 
 - [ ] **Step 2: Write failing normalization tests**
 
@@ -443,10 +446,10 @@ git commit -m "feat: normalize export conversations"
 
 - [ ] **Step 1: Write failing tokenizer tests using deterministic local text**
 
-Use `js-tiktoken/lite` only with locally bundled rank modules. The test must confirm no network is needed and that fallback provenance is recorded:
+Use `js-tiktoken/lite` only with locally bundled rank modules. The test must confirm no network is needed and fallback confidence is recorded:
 
 ```ts
-it('marks an unknown-model tokenizer mapping as estimated', async () => {
+it('marks an unknown-model tokenizer mapping as fallback', async () => {
   const result = await countTextTokens('hello world', { encoding: 'o200k_base', confidence: 'fallback' });
   expect(result.count).toBeGreaterThan(0);
   expect(result.confidence).toBe('fallback');
@@ -476,7 +479,7 @@ Construct `Tiktoken` from `js-tiktoken/lite` after the rank module resolves. Cac
 
 - [ ] **Step 5: Implement streaming-friendly aggregation**
 
-The aggregator must update bounded counters/buckets per accepted conversation rather than retain all message bodies. Conversation-level metrics retain only IDs, titles, model IDs, timestamps, counts, flags, and token totals.
+The aggregator updates bounded counters/buckets per accepted conversation rather than retaining all message bodies. Conversation-level metrics retain only IDs, titles, model IDs, timestamps, counts, flags, and token totals.
 
 - [ ] **Step 6: Run tests and commit**
 
@@ -510,7 +513,10 @@ git commit -m "feat: tokenize and aggregate chat usage"
 Use chunk boundaries in the middle of UTF-8 code points, escaped quotes, nested arrays/objects, and braces inside strings:
 
 ```ts
-const input = '[{"text":"} ] \\" 日本語"},{"nested":{"v":[1,2,3]}}]';
+const input = JSON.stringify([
+  { text: '} ] " 日本語' },
+  { nested: { v: [1, 2, 3] } }
+]);
 const values = await collect(splitTopLevelJsonArray(chunkUtf8(input, [1, 2, 5, 3])));
 expect(values.map(JSON.parse)).toEqual(JSON.parse(input));
 ```
@@ -523,18 +529,11 @@ Run: `npm test -- tests/unit/jsonArrayStream.test.ts`
 
 - [ ] **Step 3: Implement the top-level array state machine**
 
-Track `started`, `finished`, `depth`, `inString`, `escaped`, and a per-object text buffer after UTF-8 decoding with a streaming `TextDecoder`. Emit one complete top-level value string when depth returns to zero. Reject non-array roots and structurally incomplete streams.
+Track `started`, `finished`, `depth`, `inString`, `escaped`, and a per-object text buffer after UTF-8 decoding with `TextDecoder.decode(chunk, { stream: true })`. Emit one complete top-level value string when depth returns to zero. Reject non-array roots and structurally incomplete streams.
 
 - [ ] **Step 4: Write ZIP inspection/safety tests**
 
-Synthetic ZIP tests must cover:
-
-- missing `conversations.json`
-- duplicate candidate entries
-- path traversal name such as `../conversations.json`
-- suspicious compression ratio
-- declared entry size above policy
-- valid normal export
+Synthetic ZIP tests cover missing `conversations.json`, duplicate candidate entries, path traversal names such as `../conversations.json`, suspicious compression ratio, declared entry size above policy, and a valid normal export.
 
 Define a concrete default policy in `zipInspector.ts`:
 
@@ -546,7 +545,7 @@ export const DEFAULT_ZIP_SAFETY = {
 } as const;
 ```
 
-A suspicious ratio is surfaced as a blocking safety result for automatic processing; the settings UI may later allow the user to raise the local policy explicitly.
+A suspicious ratio is surfaced as a blocking safety result for automatic processing; the settings UI can later allow the user to raise the local policy explicitly.
 
 - [ ] **Step 5: Implement streaming decompression with zip.js**
 
@@ -576,26 +575,20 @@ git commit -m "feat: stream conversations from export zip"
 - Produces: `openProfilerDb()`.
 - Produces: `analysisRepository` methods `create`, `get`, `list`, `delete`.
 - Produces: `metricsRepository` batch methods.
-- Produces: `checkpointRepository` `save`, `load`, `clear`.
+- Produces: `checkpointRepository` methods `save`, `load`, `clear`.
 - Produces: `fingerprintImport(file, inspection): Promise<ImportFingerprint>`.
 
 - [ ] **Step 1: Write failing fingerprint tests**
 
-Same file bytes/metadata must produce the same fingerprint; changed `conversations.json` content or relevant entry metadata must change it. The content hash should sample or stream stable relevant bytes rather than load an 8 GiB entry in memory.
+Same file bytes/metadata produce the same fingerprint; changed `conversations.json` content or relevant entry metadata changes it. The content hash samples or streams stable relevant bytes rather than loading an 8 GiB entry in memory.
 
 - [ ] **Step 2: Write failing fake-IndexedDB integration tests**
 
-Use `fake-indexeddb` under Vitest. Verify:
-
-- analysis metadata roundtrip
-- batched conversation metrics roundtrip
-- checkpoint save/load
-- deleting one analysis removes only its keyed records
-- no raw message body property exists in persisted conversation metrics
+Use `fake-indexeddb` under Vitest. Verify analysis metadata roundtrip, batched conversation metrics roundtrip, checkpoint save/load, deleting one analysis removes only its keyed records, and no raw message body property exists in persisted conversation metrics.
 
 - [ ] **Step 3: Define the database schema**
 
-Use `idb` with explicit version `1` and stores from the spec. Key analysis-owned records by `[analysisId, localKey]` or indexes that allow efficient analysis deletion/query.
+Use `idb` with explicit database version `1` and stores from the spec. Key analysis-owned records by `[analysisId, localKey]` or indexes that allow efficient analysis deletion/query.
 
 - [ ] **Step 4: Implement transactional batch APIs**
 
@@ -684,15 +677,7 @@ git commit -m "feat: orchestrate bounded analysis workers"
 
 - [ ] **Step 1: Write failing component tests**
 
-Verify the import page states:
-
-- idle file picker
-- local-only/no-API-key privacy copy
-- safety rejection
-- processing stage/count/elapsed/warnings
-- cancel action
-- existing-analysis choice (`open existing` / `reanalyze`)
-- recovery requiring file re-selection
+Verify idle file picker, local-only/no-API-key privacy copy, safety rejection, processing stage/count/elapsed/warnings, cancel action, existing-analysis choice (`open existing` / `reanalyze`), and recovery requiring file re-selection.
 
 - [ ] **Step 2: Verify tests fail**
 
@@ -700,7 +685,7 @@ Run: `npm test -- tests/unit/importPage.test.tsx`
 
 - [ ] **Step 3: Implement accessible file selection without File System Access API**
 
-Use `<input type="file" accept=".zip,application/zip">`; drag/drop can be an enhancement on desktop but must call the same code path.
+Use `<input type="file" accept=".zip,application/zip">`; drag/drop is a desktop enhancement but calls the same import path.
 
 - [ ] **Step 4: Implement import-session state machine**
 
@@ -708,7 +693,7 @@ Use explicit states: `idle`, `inspecting`, `duplicate`, `running`, `cancelled`, 
 
 - [ ] **Step 5: Add E2E happy-path import**
 
-Create a tiny synthetic ZIP fixture in the test setup, select it through Playwright, wait for completion, and assert navigation reaches Overview with the expected synthetic totals.
+Create a tiny synthetic ZIP fixture in the test setup, select it through Playwright, wait for completion, and assert navigation reaches Overview with expected synthetic totals.
 
 - [ ] **Step 6: Run tests and commit**
 
@@ -740,7 +725,7 @@ git commit -m "feat: add export import workflow"
 - Modify: `src/app/navigation.ts`
 
 **Interfaces:**
-- Produces query functions returning already-bounded view models rather than message bodies.
+- Produces query functions returning bounded view models rather than message bodies.
 - Consumes `MetricProvenance` and displays it on every estimate/calculation card.
 
 - [ ] **Step 1: Write failing analytics-query tests**
@@ -754,11 +739,11 @@ render(<MetricBadge label="Estimated processing" value="12–18M" provenance="es
 expect(screen.getByText('estimated')).toBeVisible();
 ```
 
-The badge must expose provenance text, not color alone.
+The badge exposes provenance text, not color alone.
 
 - [ ] **Step 3: Implement repository read models**
 
-Return only data needed by each page. Conversation table queries must support sort/filter without loading message text and must expose total row count for virtualization.
+Return only data needed by each page. Conversation table queries support sort/filter without loading message text and expose total row count for virtualization.
 
 - [ ] **Step 4: Implement Overview and Models pages**
 
@@ -814,11 +799,11 @@ Expose model substitution, cache ratio, hidden input overhead, and reasoning out
 
 - [ ] **Step 3: Implement Tools/Web and Data Quality pages**
 
-Tools must include unknown raw types. Data Quality lists severity, counts, coverage percentages, unknown models, and unknown schema keys with enough raw identifier text for future debugging but no full conversation body.
+Tools includes unknown raw types. Data Quality lists severity, counts, coverage percentages, unknown models, and unknown schema keys with enough raw identifier text for future debugging but no full conversation body.
 
 - [ ] **Step 4: Implement Comparison page**
 
-Provide manual Work/Codex summary entry with provenance fixed to `reported`. Show Chat calculated/estimated values alongside it, with a visible note that measurement semantics differ.
+Provide manual Work/Codex summary entry with provenance fixed to `reported` in a comparison-specific type. Show Chat calculated/estimated values alongside it, with a visible note that measurement semantics differ.
 
 - [ ] **Step 5: Implement Settings**
 
@@ -851,7 +836,7 @@ git commit -m "feat: add cost quality tools and settings views"
 
 - [ ] **Step 1: Write failing privacy-focused export tests**
 
-Create an analytics fixture containing a synthetic title and a separate raw body sentinel string. Assert JSON/CSV/Markdown contain metrics/title as allowed but never contain the raw-body sentinel.
+Create an analytics fixture containing a synthetic title and a separate raw body sentinel string. Assert JSON/CSV/Markdown contain allowed metrics/title but never contain the raw-body sentinel.
 
 - [ ] **Step 2: Implement a dedicated export DTO**
 
@@ -900,15 +885,26 @@ Use `vite-plugin-pwa` in `injectManifest` mode. Service worker precaches built a
 
 - [ ] **Step 3: Add restrictive CSP guidance and runtime-safe asset loading**
 
-Ensure production code contains no external script/style/font/tokenizer URLs. `public/_headers.example` documents a Pages-compatible equivalent policy where supported:
+Ensure production code contains no external script/style/font/tokenizer URLs. `public/_headers.example` documents a host-header policy:
 
 ```text
 Content-Security-Policy: default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'
 ```
 
-If GitHub Pages cannot emit headers directly, include the equivalent `<meta http-equiv="Content-Security-Policy">` subset in `index.html` and keep the header file for other static hosts.
+GitHub Pages does not provide arbitrary response-header configuration through repository files, so add the compatible `<meta http-equiv="Content-Security-Policy">` policy to `index.html` for Pages while retaining `_headers.example` for static hosts that support response headers.
 
-- [ ] **Step 4: Build the offline package**
+- [ ] **Step 4: Build the offline package and add exact package scripts**
+
+Add these scripts to `package.json`:
+
+```json
+{
+  "scripts": {
+    "make:offline": "node scripts/make-offline-package.mjs",
+    "serve:offline": "node scripts/serve-offline.mjs"
+  }
+}
+```
 
 `make-offline-package.mjs` copies `dist/`, `scripts/serve-offline.mjs`, and an offline README into a versioned ZIP. `serve-offline.mjs` is a minimal Node static server bound to `127.0.0.1` only, sends no telemetry, and serves the build without Internet access. The formal iPad offline path remains an installed/cached PWA.
 
@@ -944,11 +940,11 @@ git commit -m "feat: ship local-only pwa and offline build"
 
 - [ ] **Step 1: Create a deterministic large-export generator**
 
-The script accepts `--conversations 1000|10000|50000 --output <path>` and creates synthetic messages with deterministic seeded content/model/tool variation. It must never read local ChatGPT data.
+The script accepts `--conversations 1000|10000|50000 --output <path>` and creates synthetic messages with deterministic seeded content/model/tool variation. It never reads local ChatGPT data.
 
 - [ ] **Step 2: Write performance assertions**
 
-Use Playwright tracing/PerformanceObserver to fail when the page produces any main-thread long task above a conservative threshold during steady-state table scrolling and page navigation. Record import elapsed time as an artifact rather than enforcing a fragile absolute hardware-specific duration.
+Use Playwright tracing/PerformanceObserver to fail when the page produces a main-thread long task above a conservative threshold during steady-state table scrolling and page navigation. Record import elapsed time as an artifact rather than enforcing a fragile absolute hardware-specific duration.
 
 - [ ] **Step 3: Add iPad viewport/touch layout tests**
 
@@ -1056,7 +1052,7 @@ git commit -m "ci: complete v1 delivery pipeline"
 
 ## Execution order and handoff
 
-Implement tasks strictly in numeric order because later tasks rely on interfaces and persisted schemas established earlier. Each task should use TDD as written, commit independently, and be reviewed before proceeding when using the subagent-driven execution mode.
+Implement tasks strictly in numeric order because later tasks rely on interfaces and persisted schemas established earlier. Each task uses TDD as written, commits independently, and is reviewed before proceeding when using the subagent-driven execution mode.
 
 Before implementation begins in the next GPT project conversation:
 
@@ -1070,6 +1066,6 @@ Before implementation begins in the next GPT project conversation:
 ## Plan self-review results
 
 - Spec coverage: all design sections map to Tasks 1–14; no design requirement is intentionally deferred beyond v1.
-- Placeholder scan: no `TBD`, `TODO`, or unspecified implementation placeholder is part of the plan.
+- Placeholder scan: the plan contains no unfinished markers or generic substitute instructions in place of implementation steps.
 - Type consistency: shared IDs/domain/provenance are introduced in Task 1; model/pricing contracts in Task 2; all later tasks consume those names consistently.
 - Review Focus coverage: parser adversarial input is Task 5; malformed-neighbor recovery and unknown model/tool are Task 3; fingerprint mismatch is Task 7; external-network rejection is Tasks 12 and 14.
