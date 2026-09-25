@@ -18,11 +18,13 @@ export interface ImportStartOptions {
   profile: PerformanceProfileName;
   analysisId?: string;
   zipSafetyPolicy?: ZipSafetyPolicy;
+  modelAliases?: Record<string, string>;
 }
 
 export interface ImportResumeOptions {
   profile?: PerformanceProfileName;
   zipSafetyPolicy?: ZipSafetyPolicy;
+  modelAliases?: Record<string, string>;
 }
 
 export interface ImportSessionStartResult {
@@ -102,7 +104,7 @@ export class ImportController {
     });
 
     this.latestCheckpoint = undefined;
-    this.beginWorkers(file, analysisId, fingerprint.hash, options.profile);
+    this.beginWorkers(file, analysisId, fingerprint.hash, options.profile, undefined, options.modelAliases);
     return { analysisId, fingerprint };
   }
 
@@ -118,7 +120,14 @@ export class ImportController {
     }
 
     this.latestCheckpoint = { ...checkpoint };
-    this.beginWorkers(file, checkpoint.analysisId, fingerprint.hash, options.profile ?? 'standard', checkpoint);
+    this.beginWorkers(
+      file,
+      checkpoint.analysisId,
+      fingerprint.hash,
+      options.profile ?? 'standard',
+      checkpoint,
+      options.modelAliases
+    );
     return { analysisId: checkpoint.analysisId, fingerprint };
   }
 
@@ -133,7 +142,8 @@ export class ImportController {
     analysisId: string,
     fingerprint: string,
     profile: PerformanceProfileName,
-    checkpoint?: ImportCheckpoint
+    checkpoint?: ImportCheckpoint,
+    modelAliases?: Record<string, string>
   ): void {
     this.shutdownWorkers();
     const importWorker = this.dependencies.createImportWorker();
@@ -146,7 +156,7 @@ export class ImportController {
     importWorker.addEventListener('message', this.importListener);
     analysisWorker.addEventListener('message', this.analysisListener);
 
-    const common = { type: 'START_IMPORT' as const, analysisId, fingerprint, profile, checkpoint };
+    const common = { type: 'START_IMPORT' as const, analysisId, fingerprint, profile, checkpoint, modelAliases };
     analysisWorker.postMessage(common);
     importWorker.postMessage({ ...common, file });
   }

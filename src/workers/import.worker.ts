@@ -54,7 +54,7 @@ async function runImport(message: StartImportMessage): Promise<void> {
 
   async function* normalizedConversations() {
     for await (const raw of streamConversationObjects(message.file!, signal)) {
-      const normalized = normalizeConversation(raw, quality);
+      const normalized = normalizeConversation(raw, quality, { modelAliases: message.modelAliases });
       if (!normalized) continue;
       validSeen += 1;
       if (validSeen <= resumeCount) continue;

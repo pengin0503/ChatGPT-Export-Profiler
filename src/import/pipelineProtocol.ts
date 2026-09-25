@@ -23,6 +23,7 @@ export interface StartImportMessage {
   profile: PerformanceProfileName;
   file?: Blob;
   checkpoint?: ImportCheckpoint;
+  modelAliases?: Record<string, string>;
 }
 
 export interface BatchMessage {

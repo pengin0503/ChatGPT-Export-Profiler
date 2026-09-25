@@ -29,6 +29,24 @@ export async function loadSetting<T>(key: string): Promise<T | undefined> {
   }
 }
 
+export async function loadModelAliases(): Promise<Record<string, string>> {
+  const db = await openProfilerDb();
+  try {
+    const aliases: Record<string, string> = {};
+    for (const record of await db.getAll('settings')) {
+      if (!record.key.startsWith('model-alias:')) continue;
+      if (typeof record.value !== 'object' || record.value === null) continue;
+      const value = record.value as Record<string, unknown>;
+      const raw = typeof value.raw === 'string' ? value.raw.trim() : '';
+      const canonical = typeof value.canonical === 'string' ? value.canonical.trim() : '';
+      if (raw && canonical) aliases[raw] = canonical;
+    }
+    return aliases;
+  } finally {
+    db.close();
+  }
+}
+
 export function resolvePerformancePreference(
   preference: PerformancePreference,
   hardwareConcurrency = typeof navigator === 'undefined' ? 4 : navigator.hardwareConcurrency

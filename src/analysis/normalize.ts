@@ -1,7 +1,11 @@
 import type { NormalizedConversation, NormalizedMessage } from './domain';
-import { resolveModel } from './modelRegistry';
+import { resolveModel, type ModelAliasOverrides } from './modelRegistry';
 import { QualityCollector } from './quality';
 import { detectToolEvents } from './toolDetection';
+
+export interface NormalizeConversationOptions {
+  modelAliases?: ModelAliasOverrides;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -91,7 +95,11 @@ function getMetadata(message: Record<string, unknown>): Record<string, unknown> 
   return isRecord(message.metadata) ? message.metadata : {};
 }
 
-export function normalizeConversation(raw: unknown, quality: QualityCollector): NormalizedConversation | null {
+export function normalizeConversation(
+  raw: unknown,
+  quality: QualityCollector,
+  options: NormalizeConversationOptions = {}
+): NormalizedConversation | null {
   if (!isRecord(raw)) {
     quality.addRecoverable('conversation-not-object');
     return null;
@@ -139,7 +147,7 @@ export function normalizeConversation(raw: unknown, quality: QualityCollector): 
 
     const metadata = getMetadata(message);
     const rawModelSlug = asString(metadata.model_slug) ?? asString(metadata.default_model_slug);
-    const resolution = rawModelSlug ? resolveModel(rawModelSlug) : undefined;
+    const resolution = rawModelSlug ? resolveModel(rawModelSlug, options.modelAliases) : undefined;
     if (resolution) quality.recordModelIdentification(Boolean(resolution.canonicalId));
 
     const parentNodeId = asString(nodeValue.parent);

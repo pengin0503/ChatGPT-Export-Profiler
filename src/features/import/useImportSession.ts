@@ -9,7 +9,11 @@ import {
   type ImportCheckpoint
 } from '../../storage/repositories';
 import { inspectExportZip } from '../../import/zipInspector';
-import { loadEffectivePerformanceProfile, loadZipSafetyPolicy } from '../settings/preferences';
+import {
+  loadEffectivePerformanceProfile,
+  loadModelAliases,
+  loadZipSafetyPolicy
+} from '../settings/preferences';
 
 export interface ImportSummary {
   conversations: number;
@@ -125,11 +129,12 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
       warnings: []
     });
     try {
-      const [profile, zipSafetyPolicy] = await Promise.all([
+      const [profile, zipSafetyPolicy, modelAliases] = await Promise.all([
         loadEffectivePerformanceProfile(),
-        loadZipSafetyPolicy()
+        loadZipSafetyPolicy(),
+        loadModelAliases()
       ]);
-      await controller.start(file, { profile, analysisId, zipSafetyPolicy });
+      await controller.start(file, { profile, analysisId, zipSafetyPolicy, modelAliases });
     } catch (error) {
       setState(failureState(error));
     }
@@ -150,11 +155,12 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
         warnings: []
       });
       try {
-        const [profile, zipSafetyPolicy] = await Promise.all([
+        const [profile, zipSafetyPolicy, modelAliases] = await Promise.all([
           loadEffectivePerformanceProfile(),
-          loadZipSafetyPolicy()
+          loadZipSafetyPolicy(),
+          loadModelAliases()
         ]);
-        await controller.resume(file, checkpoint, { profile, zipSafetyPolicy });
+        await controller.resume(file, checkpoint, { profile, zipSafetyPolicy, modelAliases });
       } catch (error) {
         setState(failureState(error));
       }
@@ -181,7 +187,7 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
     } catch (error) {
       setState(failureState(error));
     }
-  }, [controller, startFresh, state]);
+  }, [startFresh, state]);
 
   const cancel = useCallback(() => {
     controller.cancel();
