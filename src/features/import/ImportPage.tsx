@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ChangeEvent } from 'react';
+import { StoragePressureNotice } from '../../components/StoragePressureNotice';
 import { useI18n } from '../../i18n';
 import { ImportProgress } from './ImportProgress';
 import { RecoveryPrompt } from './RecoveryPrompt';
@@ -11,9 +12,10 @@ import {
 export interface ImportPageProps {
   session?: ImportSessionModel;
   onComplete?(analysisId: string, summary: ImportSummary): void;
+  onManageStorage?(): void;
 }
 
-export function ImportPage({ session, onComplete }: ImportPageProps) {
+export function ImportPage({ session, onComplete, onManageStorage }: ImportPageProps) {
   const liveSession = useImportSession({ enabled: session === undefined });
   const model = session ?? liveSession;
   const { t } = useI18n();
@@ -32,7 +34,7 @@ export function ImportPage({ session, onComplete }: ImportPageProps) {
     event.currentTarget.value = '';
   };
 
-  const showPicker = !['running', 'duplicate', 'complete'].includes(model.state.status);
+  const showPicker = !['running', 'duplicate', 'complete', 'storage-pressure'].includes(model.state.status);
 
   return (
     <div className="import-page">
@@ -64,6 +66,13 @@ export function ImportPage({ session, onComplete }: ImportPageProps) {
       {model.state.status === 'recoverable' ? <RecoveryPrompt checkpoint={model.state.checkpoint} /> : null}
       {model.state.status === 'cancelled' ? (
         <RecoveryPrompt checkpoint={model.state.checkpoint} cancelled />
+      ) : null}
+      {model.state.status === 'storage-pressure' ? (
+        <StoragePressureNotice
+          checkpoint={model.state.checkpoint}
+          onManageStorage={() => onManageStorage?.()}
+          onRetry={() => model.retryImport()}
+        />
       ) : null}
 
       {model.state.status === 'failed' ? (
