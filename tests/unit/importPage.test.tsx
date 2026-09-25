@@ -10,7 +10,8 @@ function session(state: ImportSessionState): ImportSessionModel {
     selectFile: vi.fn(async () => undefined),
     cancel: vi.fn(),
     openExisting: vi.fn(async () => undefined),
-    reanalyze: vi.fn(async () => undefined)
+    reanalyze: vi.fn(async () => undefined),
+    retryImport: vi.fn(async () => undefined)
   };
 }
 
@@ -81,5 +82,30 @@ describe('ImportPage', () => {
     );
     expect(screen.getByText(/re-select the original ZIP/i)).toBeVisible();
     expect(screen.getByLabelText('Choose ChatGPT export ZIP')).toBeInTheDocument();
+  });
+
+  it('keeps the selected ZIP retryable when storage quota is exhausted', async () => {
+    const onManageStorage = vi.fn();
+    const model = session({
+      status: 'storage-pressure',
+      file: new File(['synthetic'], 'export.zip'),
+      checkpoint: {
+        analysisId: 'analysis-1',
+        fingerprint: 'fp',
+        stage: 'aggregation',
+        committedBatches: 4,
+        processedConversations: 200,
+        updatedAt: Date.now()
+      }
+    });
+
+    render(<ImportPage session={model} onManageStorage={onManageStorage} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/browser storage is full/i);
+    expect(screen.queryByLabelText('Choose ChatGPT export ZIP')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /manage storage/i }));
+    await userEvent.click(screen.getByRole('button', { name: /retry import/i }));
+    expect(onManageStorage).toHaveBeenCalledOnce();
+    expect(model.retryImport).toHaveBeenCalledOnce();
   });
 });
