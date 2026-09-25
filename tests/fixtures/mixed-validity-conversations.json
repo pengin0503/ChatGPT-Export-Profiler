@@ -1,0 +1,41 @@
+[
+  {
+    "id": "conv-valid-a",
+    "title": "Synthetic valid A",
+    "mapping": {
+      "a": {
+        "id": "a",
+        "parent": null,
+        "children": [],
+        "message": {
+          "id": "msg-a",
+          "author": { "role": "user" },
+          "content": { "content_type": "text", "parts": ["Synthetic A"] },
+          "metadata": { "model_slug": "gpt-5.6" }
+        }
+      }
+    }
+  },
+  {
+    "title": "Synthetic malformed without id",
+    "mapping": {}
+  },
+  {
+    "id": "conv-valid-b",
+    "title": "Synthetic valid B",
+    "mapping": {
+      "bad-node": { "id": "bad-node", "parent": null, "children": [], "message": 42 },
+      "b": {
+        "id": "b",
+        "parent": null,
+        "children": [],
+        "message": {
+          "id": "msg-b",
+          "author": { "role": "assistant" },
+          "content": { "content_type": "text", "parts": ["Synthetic B"] },
+          "metadata": { "model_slug": "gpt-6-luna" }
+        }
+      }
+    }
+  }
+]

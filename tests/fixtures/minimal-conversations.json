@@ -1,0 +1,38 @@
+{
+  "id": "conv-minimal",
+  "title": "Synthetic thread",
+  "create_time": 1780000000,
+  "update_time": 1780000060,
+  "mapping": {
+    "root": {
+      "id": "root",
+      "parent": null,
+      "children": ["user-node"],
+      "message": null
+    },
+    "user-node": {
+      "id": "user-node",
+      "parent": "root",
+      "children": ["assistant-node"],
+      "message": {
+        "id": "msg-user",
+        "author": { "role": "user" },
+        "create_time": 1780000001,
+        "content": { "content_type": "text", "parts": ["Synthetic message A"] },
+        "metadata": {}
+      }
+    },
+    "assistant-node": {
+      "id": "assistant-node",
+      "parent": "user-node",
+      "children": [],
+      "message": {
+        "id": "msg-assistant",
+        "author": { "role": "assistant" },
+        "create_time": 1780000002,
+        "content": { "content_type": "text", "parts": ["Synthetic message B"] },
+        "metadata": { "model_slug": "gpt-6-sol", "tool_name": "web_search" }
+      }
+    }
+  }
+}
