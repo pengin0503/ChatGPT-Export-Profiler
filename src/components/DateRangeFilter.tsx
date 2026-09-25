@@ -14,7 +14,7 @@ function presetRange(preset: RangePreset, now: number): DateRange | undefined {
   return { from: now - days * 86_400, to: now + 1 };
 }
 
-export function DateRangeFilter({ value, onChange, now = Date.now() / 1000 }: DateRangeFilterProps) {
+export function DateRangeFilter({ value, onChange, now }: DateRangeFilterProps) {
   return (
     <label className="filter-control">
       <span>Range</span>
@@ -23,7 +23,8 @@ export function DateRangeFilter({ value, onChange, now = Date.now() / 1000 }: Da
         value={value}
         onChange={(event) => {
           const preset = event.target.value as RangePreset;
-          onChange(preset, presetRange(preset, now));
+          const anchor = now ?? Date.now() / 1000;
+          onChange(preset, presetRange(preset, anchor));
         }}
       >
         <option value="7d">7 days</option>
