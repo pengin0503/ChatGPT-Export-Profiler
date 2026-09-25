@@ -71,6 +71,7 @@ export interface FailMessage {
   code: string;
   stage: ImportStage;
   messageKey: string;
+  checkpoint?: ImportCheckpoint;
 }
 
 export type PipelineMessage =
