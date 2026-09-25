@@ -19,31 +19,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: package-lock.json
-        continue-on-error: true
-      - name: Bootstrap exact dependencies
-        shell: bash
-        run: |
-          if [ ! -f package-lock.json ]; then
-            npm install --save-exact react@latest react-dom@latest @zip.js/zip.js@latest js-tiktoken@latest idb@latest @tanstack/react-virtual@latest
-            npm install --save-dev --save-exact typescript@6 @vitejs/plugin-react@latest vite@latest vitest@latest @testing-library/react@latest @testing-library/jest-dom@latest @testing-library/user-event@latest @playwright/test@latest eslint@latest @eslint/js@latest typescript-eslint@latest eslint-plugin-react-hooks@latest eslint-plugin-react-refresh@latest globals@latest fake-indexeddb@latest vite-plugin-pwa@latest jsdom@latest
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package.json package-lock.json
-            git commit -m "chore: lock current dependencies"
-            git push
-          else
-            npm ci
-          fi
+      - name: Install dependencies
+        run: npm ci
       - name: Domain RED/GREEN test
         run: npm test -- tests/unit/domain.test.ts
-      - name: Full Task 1 checks
+      - name: UI smoke RED/GREEN test
         if: ${{ hashFiles('src/analysis/domain.ts') != '' }}
+        run: |
+          npx playwright install --with-deps chromium webkit
+          npm run e2e -- tests/e2e/smoke.spec.ts
+      - name: Full Task 1 static checks
+        if: ${{ hashFiles('src/app/App.tsx') != '' }}
         run: |
           npm run typecheck
           npm run lint
           npm run build
-          npx playwright install --with-deps chromium webkit
-          npm run e2e -- tests/e2e/smoke.spec.ts
 
 # implementation branch only; replaced by ci.yml in Task 14
