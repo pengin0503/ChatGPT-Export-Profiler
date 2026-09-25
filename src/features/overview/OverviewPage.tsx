@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MetricBadge } from '../../components/MetricBadge';
 import { DateRangeFilter, type RangePreset } from '../../components/DateRangeFilter';
+import { ExportResultsButton } from '../export-results/ExportResultsButton';
 import { getModelMetrics, getOverviewMetrics, type DateRange, type OverviewMetrics, type StoredModelMetric } from '../../storage/analyticsQueries';
 
 interface OverviewPageProps { analysisId: string }
@@ -35,7 +36,10 @@ export function OverviewPage({ analysisId }: OverviewPageProps) {
     <section className="analytics-page" aria-labelledby="overview-heading">
       <div className="section-heading-row">
         <div><p className="eyebrow">ANALYSIS</p><h2 id="overview-heading">Overview</h2></div>
-        <DateRangeFilter value={rangePreset} onChange={(preset, nextRange) => { setRangePreset(preset); setRange(nextRange); }} />
+        <div className="overview-actions">
+          <DateRangeFilter value={rangePreset} onChange={(preset, nextRange) => { setRangePreset(preset); setRange(nextRange); }} />
+          <ExportResultsButton analysisId={analysisId} />
+        </div>
       </div>
       <div className="metric-grid">
         <MetricBadge label="Visible tokens" value={`${overview.totals.visibleTokens.toLocaleString()} visible tokens`} provenance="calculated" />
