@@ -36,19 +36,33 @@ const syntheticConversation = {
 
 test('imports a synthetic export locally and opens Overview', async ({ page }) => {
   const pageErrors: string[] = [];
+  const mainNavigations: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) mainNavigations.push(frame.url());
+  });
 
   const zip = await makeZip([{ name: 'conversations.json', text: JSON.stringify([syntheticConversation]) }]);
   const buffer = Buffer.from(await zip.arrayBuffer());
 
   await page.goto('/');
+  await page.evaluate(() => {
+    (globalThis as typeof globalThis & { __cepDocumentMarker?: string }).__cepDocumentMarker = 'before-import';
+  });
   await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({
     name: 'synthetic-export.zip',
     mimeType: 'application/zip',
     buffer
   });
 
-  await page.waitForTimeout(2_000);
+  for (const delay of [0, 100, 500, 2_000]) {
+    if (delay > 0) await page.waitForTimeout(delay);
+    console.log(`BODY_AFTER_${delay}MS`, JSON.stringify(await page.locator('body').innerText()));
+  }
+
+  const marker = await page.evaluate(
+    () => (globalThis as typeof globalThis & { __cepDocumentMarker?: string }).__cepDocumentMarker ?? null
+  );
   const workers = page.workers().map((worker) => worker.url());
   const databaseState = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -78,10 +92,11 @@ test('imports a synthetic export locally and opens Overview', async ({ page }) =
     };
   });
 
+  console.log('DOCUMENT_MARKER', marker);
+  console.log('MAIN_NAVIGATIONS', JSON.stringify(mainNavigations));
   console.log('WORKERS', JSON.stringify(workers));
   console.log('DB_STATE', JSON.stringify(databaseState));
   console.log('PAGE_ERRORS', JSON.stringify(pageErrors));
-  console.log('BODY_AFTER_2S', JSON.stringify(await page.locator('body').innerText()));
 
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/1 conversation/i)).toBeVisible();
