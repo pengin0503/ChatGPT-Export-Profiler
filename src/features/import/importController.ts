@@ -161,6 +161,12 @@ export class ImportController {
     importWorker.postMessage({ ...common, file });
   }
 
+  private captureFailureCheckpoint(message: PipelineMessage): void {
+    if (message.type === 'FAIL' && message.checkpoint) {
+      this.latestCheckpoint = { ...message.checkpoint };
+    }
+  }
+
   private onImportMessage(message: PipelineMessage): void {
     if (message.type === 'BATCH') {
       this.analysisWorker?.postMessage(message);
@@ -172,6 +178,7 @@ export class ImportController {
       return;
     }
     if (message.type === 'FAIL') {
+      this.captureFailureCheckpoint(message);
       this.emit(message);
       this.shutdownWorkers();
       return;
@@ -192,6 +199,7 @@ export class ImportController {
       return;
     }
     if (message.type === 'FAIL') {
+      this.captureFailureCheckpoint(message);
       this.emit(message);
       this.shutdownWorkers();
       return;
