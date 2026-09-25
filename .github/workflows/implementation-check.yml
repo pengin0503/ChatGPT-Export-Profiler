@@ -30,7 +30,7 @@ jobs:
         run: npm run make:offline
       - name: Install E2E browsers
         run: npx playwright install --with-deps chromium webkit
-      - name: Import, analytics, isolation, and offline E2E
-        run: npm run e2e -- tests/e2e/import-flow.spec.ts tests/e2e/analytics-pages.spec.ts tests/e2e/secondary-pages.spec.ts tests/e2e/network-isolation.spec.ts tests/e2e/offline.spec.ts
+      - name: Import, analytics, isolation, offline, and iPad E2E
+        run: npm run e2e -- tests/e2e/import-flow.spec.ts tests/e2e/analytics-pages.spec.ts tests/e2e/secondary-pages.spec.ts tests/e2e/network-isolation.spec.ts tests/e2e/offline.spec.ts tests/e2e/ipad-layout.spec.ts
 
 # implementation branch only; replaced by ci.yml in Task 14
