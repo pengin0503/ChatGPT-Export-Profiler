@@ -15,6 +15,7 @@ export async function* splitTopLevelJsonArray(
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let phase: 'before-array' | 'between-values' | 'in-value' | 'after-array' = 'before-array';
+  let finished = false;
   let buffer = '';
   let depth = 0;
   let inString = false;
@@ -41,6 +42,7 @@ export async function* splitTopLevelJsonArray(
         if (/\s/.test(char)) continue;
         if (char === ']') {
           phase = 'after-array';
+          finished = true;
           continue;
         }
         if (char === ',') throw new Error('Unexpected comma in top-level JSON array.');
@@ -89,6 +91,7 @@ export async function* splitTopLevelJsonArray(
           emitted.push(value);
           buffer = '';
           phase = 'after-array';
+          finished = true;
           continue;
         }
         throw new Error('Unexpected closing brace in top-level JSON value.');
@@ -119,7 +122,7 @@ export async function* splitTopLevelJsonArray(
     for (const item of processText(decoder.decode())) yield item;
     assertNotAborted(signal);
 
-    if (phase !== 'after-array') {
+    if (!finished) {
       throw new Error('Incomplete or truncated top-level JSON array.');
     }
   } finally {

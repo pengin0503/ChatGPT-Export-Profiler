@@ -33,7 +33,7 @@ describe('splitTopLevelJsonArray', () => {
       { text: 'Synthetic message B', enabled: true }
     ]);
     const values = await collect(chunkUtf8(input, [1, 2, 5, 3]));
-    expect(values.map(JSON.parse)).toEqual(JSON.parse(input));
+    expect(values.map((value) => JSON.parse(value))).toEqual(JSON.parse(input));
   });
 
   it('accepts whitespace and an empty array', async () => {

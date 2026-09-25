@@ -28,10 +28,13 @@ export async function* streamConversationObjects(file: Blob, signal: AbortSignal
   try {
     const entries = await zipReader.getEntries({ filenameValidation: 'tolerant' });
     const candidates = entries.filter((entry) => !entry.directory && entry.filename === inspection.conversationEntry?.filename);
-    if (candidates.length !== 1) throw new ExportZipSafetyError(inspection);
+    const candidate = candidates[0];
+    if (candidates.length !== 1 || !candidate || !('getData' in candidate)) {
+      throw new ExportZipSafetyError(inspection);
+    }
 
     const transform = new TransformStream<Uint8Array, Uint8Array>();
-    extraction = candidates[0].getData(transform.writable, { signal });
+    extraction = candidate.getData(transform.writable, { signal });
 
     for await (const value of splitTopLevelJsonArray(transform.readable, signal)) {
       if (signal.aborted) throw abortError();
