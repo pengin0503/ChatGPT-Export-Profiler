@@ -77,7 +77,7 @@ function failureState(error: unknown): ImportSessionState {
 export function useImportSession(options: UseImportSessionOptions = {}): ImportSessionModel {
   const enabled = options.enabled ?? true;
   const controller = useMemo(() => new ImportController(), []);
-  const activeFileRef = useRef<File>();
+  const activeFileRef = useRef<File | undefined>(undefined);
   const [state, setState] = useState<ImportSessionState>({ status: 'idle' });
 
   useEffect(() => {
