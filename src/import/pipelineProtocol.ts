@@ -103,13 +103,12 @@ export async function runBoundedBatchProducer<T>(
   let batch: T[] = [];
 
   const launch = (values: T[]): void => {
-    let task: Promise<void>;
-    task = Promise.resolve()
-      .then(() => options.sendBatch(values))
-      .finally(() => {
-        inFlight.delete(task);
-      });
+    const task = Promise.resolve().then(() => options.sendBatch(values));
     inFlight.add(task);
+    task.then(
+      () => inFlight.delete(task),
+      () => inFlight.delete(task)
+    );
   };
 
   for await (const value of source) {
