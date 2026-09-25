@@ -11,7 +11,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "make:offline": "node scripts/make-offline-package.mjs",
+    "serve:offline": "node scripts/serve-offline.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "3.14.13",

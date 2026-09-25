@@ -1,0 +1,10 @@
+{
+  "name": "ChatGPT Export Profiler",
+  "short_name": "Export Profiler",
+  "description": "Local-only analytics for ChatGPT data exports.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101827",
+  "theme_color": "#101827"
+}

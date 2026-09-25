@@ -26,6 +26,8 @@ jobs:
         run: npm run lint
       - name: Build
         run: npm run build
+      - name: Build offline package
+        run: npm run make:offline
       - name: Install E2E browsers
         run: npx playwright install --with-deps chromium webkit
       - name: Import, analytics, isolation, and offline E2E
