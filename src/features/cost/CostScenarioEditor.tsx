@@ -30,7 +30,7 @@ export function CostScenarioEditor({ modelIds, onCalculate }: CostScenarioEditor
     <section className="panel" aria-labelledby="scenario-heading">
       <h3 id="scenario-heading">Estimated processing scenario</h3>
       <p className="muted-copy">
-        These controls are user-selected assumptions. They do not describe actual ChatGPT server-side processing.
+        These controls are user-selected scenario inputs. They do not describe actual ChatGPT server-side processing.
       </p>
       <div className="form-grid">
         <label>
@@ -67,7 +67,7 @@ export function CostScenarioEditor({ modelIds, onCalculate }: CostScenarioEditor
             setError(undefined);
             void onCalculate({ replacementModelId, assumptions });
           } catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Invalid scenario assumptions.');
+            setError(caught instanceof Error ? caught.message : 'Invalid scenario inputs.');
           }
         }}
       >
