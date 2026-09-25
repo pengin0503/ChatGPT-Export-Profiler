@@ -23,7 +23,10 @@ export async function* streamConversationObjects(file: Blob, signal: AbortSignal
   if (!inspection.ok || !inspection.conversationEntry) throw new ExportZipSafetyError(inspection);
   if (signal.aborted) throw abortError();
 
-  const zipReader = new ZipReader(new BlobReader(file));
+  // This stream already runs inside the dedicated import worker in production.
+  // Keeping zip.js inline here avoids spawning a nested codec worker whose URL can
+  // be unavailable after bundling, while decompression still stays off the UI thread.
+  const zipReader = new ZipReader(new BlobReader(file), { useWebWorkers: false });
   let extraction: Promise<unknown> | undefined;
   try {
     const entries = await zipReader.getEntries({ filenameValidation: 'tolerant' });
