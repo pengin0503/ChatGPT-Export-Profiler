@@ -46,6 +46,6 @@ test('imports a synthetic export locally and opens Overview', async ({ page }) =
   });
 
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/1 conversation/i)).toBeVisible();
-  await expect(page.getByText(/2 messages/i)).toBeVisible();
+  await expect(page.getByText('1 conversation', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 messages', { exact: true })).toBeVisible();
 });

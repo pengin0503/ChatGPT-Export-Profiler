@@ -32,13 +32,13 @@ test('navigates bounded analytics pages after local import', async ({ page }) =>
   await page.goto('/');
   await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({ name: 'analytics.zip', mimeType: 'application/zip', buffer });
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/2 conversations/i)).toBeVisible();
-  await expect(page.getByText(/4 messages/i)).toBeVisible();
+  await expect(page.getByText('2 conversations', { exact: true })).toBeVisible();
+  await expect(page.getByText('4 messages', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Models' }).click();
   await expect(page.getByRole('heading', { name: 'Models', exact: true })).toBeVisible();
-  await expect(page.getByText('gpt-6-sol', { exact: true })).toBeVisible();
-  await expect(page.getByText('gpt-5.6-sol', { exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'gpt-6-sol', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'gpt-5.6-sol', exact: true }).first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Timeline' }).click();
   await expect(page.getByRole('heading', { name: 'Timeline', exact: true })).toBeVisible();
