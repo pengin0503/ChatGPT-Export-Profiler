@@ -5,13 +5,15 @@ interface PrecacheEntry {
   revision?: string | null;
 }
 
-const sw = self as unknown as ServiceWorkerGlobalScope & {
+type ProfilerServiceWorker = ServiceWorkerGlobalScope & {
   __WB_MANIFEST: PrecacheEntry[];
 };
 
+const sw = self as unknown as ProfilerServiceWorker;
+const precacheManifest = (self as unknown as ProfilerServiceWorker).__WB_MANIFEST;
 const CACHE_PREFIX = 'chatgpt-export-profiler-app-shell-';
 const CACHE_NAME = `${CACHE_PREFIX}v1`;
-const precacheUrls = sw.__WB_MANIFEST.map((entry) => new URL(entry.url, sw.registration.scope).href);
+const precacheUrls = precacheManifest.map((entry) => new URL(entry.url, sw.registration.scope).href);
 const precacheUrlSet = new Set(precacheUrls);
 const appShellUrl = new URL('index.html', sw.registration.scope).href;
 

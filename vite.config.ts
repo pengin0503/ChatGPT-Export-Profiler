@@ -14,7 +14,6 @@ export default defineConfig({
       registerType: 'autoUpdate',
       manifest: false,
       injectManifest: {
-        injectionPoint: 'sw.__WB_MANIFEST',
         globPatterns: ['**/*.{html,js,css,json,webmanifest,svg,png,ico,woff,woff2}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024
       }
