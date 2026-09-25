@@ -16,6 +16,20 @@ describe('normalizeConversation', () => {
     expect(conversation.messages[1].toolEvents).toContainEqual({ kind: 'web-search', rawType: 'web_search' });
   });
 
+  it('applies a local model alias override during normalization', () => {
+    const quality = new QualityCollector();
+    const raw = structuredClone(unknown) as unknown as Record<string, unknown>;
+    const mapping = raw.mapping as Record<string, Record<string, unknown>>;
+    const firstNode = Object.values(mapping)[0];
+    const message = firstNode.message as Record<string, unknown>;
+    message.metadata = { ...(message.metadata as Record<string, unknown>), model_slug: 'future-model-x' };
+
+    const conversation = normalizeConversation(raw, quality, { modelAliases: { 'future-model-x': 'gpt-6-sol' } })!;
+    expect(conversation.messages[0].rawModelSlug).toBe('future-model-x');
+    expect(conversation.messages[0].canonicalModelId).toBe('gpt-6-sol');
+    expect(quality.snapshot().coverage.modelIdentification.identified).toBeGreaterThan(0);
+  });
+
   it('keeps valid conversations when a neighboring conversation is malformed', () => {
     const quality = new QualityCollector();
     const results = (mixed as unknown[]).map((item) => normalizeConversation(item, quality));
