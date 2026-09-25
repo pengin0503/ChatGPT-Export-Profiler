@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fingerprintImport } from '../../analysis/fingerprint';
 import { ImportController } from './importController';
 import type { ImportStage } from '../../storage/db';
@@ -35,6 +35,7 @@ export type ImportSessionState =
     }
   | { status: 'cancelled'; checkpoint?: ImportCheckpoint }
   | { status: 'recoverable'; checkpoint: ImportCheckpoint }
+  | { status: 'storage-pressure'; file: File; checkpoint: ImportCheckpoint }
   | { status: 'failed'; code: string; messageKey: string }
   | { status: 'complete'; analysisId: string; summary: ImportSummary };
 
@@ -44,6 +45,7 @@ export interface ImportSessionModel {
   cancel(): void;
   openExisting(): Promise<void>;
   reanalyze(): Promise<void>;
+  retryImport(): Promise<void>;
 }
 
 export interface UseImportSessionOptions {
@@ -75,6 +77,7 @@ function failureState(error: unknown): ImportSessionState {
 export function useImportSession(options: UseImportSessionOptions = {}): ImportSessionModel {
   const enabled = options.enabled ?? true;
   const controller = useMemo(() => new ImportController(), []);
+  const activeFileRef = useRef<File>();
   const [state, setState] = useState<ImportSessionState>({ status: 'idle' });
 
   useEffect(() => {
@@ -94,6 +97,14 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
         return;
       }
       if (event.type === 'FAIL') {
+        if (event.code === 'STORAGE_QUOTA_EXCEEDED') {
+          const checkpoint = event.checkpoint ?? controller.getLatestCheckpoint();
+          const file = activeFileRef.current;
+          if (checkpoint && file) {
+            setState({ status: 'storage-pressure', file, checkpoint });
+            return;
+          }
+        }
         setState({ status: 'failed', code: event.code, messageKey: event.messageKey });
         return;
       }
@@ -118,8 +129,31 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
     return () => { active = false; };
   }, [enabled]);
 
+  const resumeFromCheckpoint = useCallback(async (file: File, checkpoint: ImportCheckpoint): Promise<void> => {
+    activeFileRef.current = file;
+    setState({
+      status: 'running',
+      analysisId: checkpoint.analysisId,
+      stage: checkpoint.stage,
+      processedConversations: checkpoint.processedConversations,
+      startedAt: Date.now(),
+      warnings: []
+    });
+    try {
+      const [profile, zipSafetyPolicy, modelAliases] = await Promise.all([
+        loadEffectivePerformanceProfile(),
+        loadZipSafetyPolicy(),
+        loadModelAliases()
+      ]);
+      await controller.resume(file, checkpoint, { profile, zipSafetyPolicy, modelAliases });
+    } catch (error) {
+      setState(failureState(error));
+    }
+  }, [controller]);
+
   const startFresh = useCallback(async (file: File): Promise<void> => {
     const analysisId = crypto.randomUUID();
+    activeFileRef.current = file;
     setState({
       status: 'running',
       analysisId,
@@ -146,24 +180,7 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
       : state.status === 'cancelled' ? state.checkpoint : undefined;
 
     if (checkpoint) {
-      setState({
-        status: 'running',
-        analysisId: checkpoint.analysisId,
-        stage: checkpoint.stage,
-        processedConversations: checkpoint.processedConversations,
-        startedAt: Date.now(),
-        warnings: []
-      });
-      try {
-        const [profile, zipSafetyPolicy, modelAliases] = await Promise.all([
-          loadEffectivePerformanceProfile(),
-          loadZipSafetyPolicy(),
-          loadModelAliases()
-        ]);
-        await controller.resume(file, checkpoint, { profile, zipSafetyPolicy, modelAliases });
-      } catch (error) {
-        setState(failureState(error));
-      }
+      await resumeFromCheckpoint(file, checkpoint);
       return;
     }
 
@@ -187,7 +204,7 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
     } catch (error) {
       setState(failureState(error));
     }
-  }, [startFresh, state]);
+  }, [resumeFromCheckpoint, startFresh, state]);
 
   const cancel = useCallback(() => {
     controller.cancel();
@@ -210,5 +227,10 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
     await startFresh(state.file);
   }, [startFresh, state]);
 
-  return { state, selectFile, cancel, openExisting, reanalyze };
+  const retryImport = useCallback(async (): Promise<void> => {
+    if (state.status !== 'storage-pressure') return;
+    await resumeFromCheckpoint(state.file, state.checkpoint);
+  }, [resumeFromCheckpoint, state]);
+
+  return { state, selectFile, cancel, openExisting, reanalyze, retryImport };
 }
