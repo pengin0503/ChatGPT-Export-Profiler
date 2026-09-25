@@ -77,16 +77,16 @@ export function App() {
             <h2 id="overview-heading">{t('nav.overview')}</h2>
             <div className="overview-metrics">
               <article>
-                <strong>{completed.summary.conversations}</strong>
-                <span>{completed.summary.conversations === 1 ? 'conversation' : 'conversations'}</span>
+                <strong>
+                  {completed.summary.conversations}{' '}
+                  {completed.summary.conversations === 1 ? 'conversation' : 'conversations'}
+                </strong>
               </article>
               <article>
-                <strong>{completed.summary.messages}</strong>
-                <span>messages</span>
+                <strong>{completed.summary.messages} messages</strong>
               </article>
               <article>
-                <strong>{completed.summary.visibleTokens}</strong>
-                <span>visible tokens</span>
+                <strong>{completed.summary.visibleTokens} visible tokens</strong>
               </article>
             </div>
           </section>
