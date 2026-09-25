@@ -105,4 +105,33 @@ describe('ImportController recovery', () => {
     expect(importWorker.terminated).toBe(true);
     expect(analysisWorker.terminated).toBe(true);
   });
+
+  it('adopts the durable checkpoint attached to a storage quota failure before shutting workers down', async () => {
+    const importWorker = new FakeWorker();
+    const analysisWorker = new FakeWorker();
+    const controller = new ImportController({
+      inspectZip: async () => inspection,
+      fingerprintImport: async () => fingerprint('expected-fingerprint'),
+      createImportWorker: () => importWorker,
+      createAnalysisWorker: () => analysisWorker,
+      createAnalysis: async () => undefined
+    });
+    const events: PipelineMessage[] = [];
+    controller.subscribe((event) => events.push(event));
+
+    await controller.start(new Blob(['synthetic']), { profile: 'safe', analysisId: 'analysis-1' });
+    const durable = checkpoint({ committedBatches: 4, processedConversations: 200 });
+    analysisWorker.emit({
+      type: 'FAIL',
+      code: 'STORAGE_QUOTA_EXCEEDED',
+      stage: 'aggregation',
+      messageKey: 'import.storageFull',
+      checkpoint: durable
+    });
+
+    expect(controller.getLatestCheckpoint()).toEqual(durable);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'FAIL', code: 'STORAGE_QUOTA_EXCEEDED' }));
+    expect(importWorker.terminated).toBe(true);
+    expect(analysisWorker.terminated).toBe(true);
+  });
 });
