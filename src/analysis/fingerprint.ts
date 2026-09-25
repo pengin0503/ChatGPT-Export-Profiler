@@ -44,9 +44,9 @@ async function readSamples(file: Blob): Promise<Sample[]> {
   );
 }
 
-function concatenate(parts: Uint8Array[]): Uint8Array {
+function concatenate(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
-  const result = new Uint8Array(total);
+  const result = new Uint8Array(new ArrayBuffer(total));
   let offset = 0;
   for (const part of parts) {
     result.set(part, offset);
