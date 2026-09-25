@@ -48,15 +48,12 @@ test('imports a synthetic export locally and opens Overview', async ({ page }) =
     buffer
   });
 
-  try {
-    await expect
-      .poll(() => page.locator('body').innerText(), { timeout: 30_000 })
-      .toContain('Overview');
-  } catch (error) {
-    console.log('PAGE_ERRORS', JSON.stringify(pageErrors));
-    console.log('FINAL_BODY', JSON.stringify(await page.locator('body').innerText()));
-    throw error;
-  }
+  await expect
+    .poll(() => page.locator('body').innerText(), { timeout: 30_000 })
+    .toContain('Overview');
+
+  console.log('PAGE_ERRORS', JSON.stringify(pageErrors));
+  console.log('OVERVIEW_BODY', JSON.stringify(await page.locator('body').innerText()));
 
   await expect(page.getByText(/1 conversation/i)).toBeVisible();
   await expect(page.getByText(/2 messages/i)).toBeVisible();
