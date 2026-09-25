@@ -34,6 +34,27 @@ const syntheticConversation = {
   }
 };
 
+const aliasConversation = {
+  id: 'alias-synthetic-1',
+  title: 'Alias synthetic',
+  create_time: 1_796_000_100,
+  update_time: 1_796_000_120,
+  mapping: {
+    user: {
+      id: 'alias-user',
+      parent: null,
+      children: [],
+      message: {
+        id: 'alias-user-message',
+        author: { role: 'user' },
+        create_time: 1_796_000_100,
+        content: { content_type: 'text', parts: ['Synthetic alias user'] },
+        metadata: { model_slug: 'future-alias-model' }
+      }
+    }
+  }
+};
+
 test('opens cost, tools, quality, comparison, and settings after local import', async ({ page }) => {
   const zip = await makeZip([{ name: 'conversations.json', text: JSON.stringify([syntheticConversation]) }]);
   const buffer = Buffer.from(await zip.arrayBuffer());
@@ -73,4 +94,28 @@ test('opens cost, tools, quality, comparison, and settings after local import', 
   await expect(page.getByText('Performance profile', { exact: true })).toBeVisible();
   await expect(page.getByText('Local pricing overrides', { exact: true })).toBeVisible();
   await expect(page.getByText('Storage', { exact: true })).toBeVisible();
+});
+
+test('applies a saved local model alias to the next import', async ({ page }) => {
+  const zip = await makeZip([{ name: 'conversations.json', text: JSON.stringify([aliasConversation]) }]);
+  const buffer = Buffer.from(await zip.arrayBuffer());
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByLabel('Raw model alias').fill('future-alias-model');
+  await page.getByLabel('Canonical model ID').fill('gpt-6-sol');
+  await page.getByRole('button', { name: 'Save model alias' }).click();
+  await expect(page.getByText(/saved local model alias/i)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Import' }).click();
+  await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({
+    name: 'alias-export.zip',
+    mimeType: 'application/zip',
+    buffer
+  });
+  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Models' }).click();
+
+  const row = page.getByRole('row').filter({ hasText: 'future-alias-model' });
+  await expect(row).toContainText('gpt-6-sol');
 });
