@@ -1,4 +1,4 @@
-import { expect, test, type Download } from '@playwright/test';
+import { expect, test, type Download, type Page } from '@playwright/test';
 import { makeZip } from '../helpers/makeZip';
 
 const conversations = [
@@ -68,7 +68,7 @@ const conversations = [
   }
 ];
 
-async function expectDownload(page: Parameters<typeof test>[0] extends never ? never : any, buttonName: string): Promise<Download> {
+async function expectDownload(page: Page, buttonName: string): Promise<Download> {
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: buttonName }).click();
   const download = await downloadPromise;
@@ -115,7 +115,7 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
   await page.getByLabel('Conversation model filter').fill('gpt-6-sol');
   await expect(page.getByText('Acceptance alpha', { exact: true })).toBeVisible();
   await page.getByLabel('Conversation model filter').fill('');
-  await page.getByText('Web', { exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Web' }).check();
   await expect(page.getByText('Acceptance alpha', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Cost' }).click();
