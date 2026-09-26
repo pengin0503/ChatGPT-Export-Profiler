@@ -82,8 +82,11 @@ function roleClass(role: string): RoleClass {
   return 'other';
 }
 
-function toMilliseconds(timestamp: number): number {
-  return timestamp < 100_000_000_000 ? timestamp * 1000 : timestamp;
+function toMilliseconds(timestamp: number): number | undefined {
+  const milliseconds = timestamp < 100_000_000_000 ? timestamp * 1000 : timestamp;
+  if (!Number.isFinite(milliseconds)) return undefined;
+  const value = new Date(milliseconds).getTime();
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function isoWeekKey(date: Date): string {
@@ -96,8 +99,10 @@ function isoWeekKey(date: Date): string {
   return `${isoYear}-W${String(week).padStart(2, '0')}`;
 }
 
-function timeKeys(timestamp: number): Record<BucketKind, string> {
-  const date = new Date(toMilliseconds(timestamp));
+function timeKeys(timestamp: number): Record<BucketKind, string> | undefined {
+  const milliseconds = toMilliseconds(timestamp);
+  if (milliseconds === undefined) return undefined;
+  const date = new Date(milliseconds);
   const iso = date.toISOString();
   return {
     hour: iso.slice(0, 13),
@@ -123,13 +128,51 @@ function createEmptyTotals(): AggregateTotals {
 }
 
 function updateRange(target: { firstTimestamp?: number; lastTimestamp?: number }, timestamp?: number): void {
-  if (timestamp === undefined) return;
+  if (timestamp === undefined || toMilliseconds(timestamp) === undefined) return;
   target.firstTimestamp = target.firstTimestamp === undefined ? timestamp : Math.min(target.firstTimestamp, timestamp);
   target.lastTimestamp = target.lastTimestamp === undefined ? timestamp : Math.max(target.lastTimestamp, timestamp);
 }
 
-function modelKey(message: NormalizedMessage): string {
-  return message.canonicalModelId ?? message.rawModelSlug ?? 'unknown';
+function explicitModelKey(message: NormalizedMessage): string | undefined {
+  return message.canonicalModelId ?? message.rawModelSlug;
+}
+
+function inferTurnModels(messages: readonly NormalizedMessage[]): Map<string, string> {
+  const byId = new Map(messages.map((message) => [message.messageId, message]));
+  const inferred = new Map<string, string>();
+
+  for (const message of messages) {
+    const model = explicitModelKey(message);
+    if (message.role !== 'assistant' || !model) continue;
+    const visited = new Set<string>();
+    let parentId = message.parentId;
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      if (parent.role === 'user') {
+        if (!explicitModelKey(parent) && !inferred.has(parent.messageId)) inferred.set(parent.messageId, model);
+        break;
+      }
+      parentId = parent.parentId;
+    }
+  }
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message.role !== 'user' || explicitModelKey(message) || inferred.has(message.messageId)) continue;
+    for (let nextIndex = index + 1; nextIndex < messages.length; nextIndex += 1) {
+      const next = messages[nextIndex];
+      if (next.role === 'user') break;
+      const model = explicitModelKey(next);
+      if (next.role === 'assistant' && model) {
+        inferred.set(message.messageId, model);
+        break;
+      }
+    }
+  }
+
+  return inferred;
 }
 
 function medianFromHistogram(histogram: Map<number, number>, total: number): number {
@@ -192,9 +235,15 @@ export function createAggregator() {
       hasTools: false
     };
     const modelIds = new Set<string>();
+    const inferredModels = inferTurnModels(conversation.messages);
 
     for (const message of conversation.messages) {
-      const tokenResult = await countVisibleTokens(message);
+      const inferredModel = inferredModels.get(message.messageId);
+      const tokenResult = await countVisibleTokens({
+        text: message.text,
+        canonicalModelId: message.canonicalModelId ?? inferredModel,
+        rawModelSlug: message.rawModelSlug
+      });
       const tokenCount = tokenResult.count;
       const kind = roleClass(message.role);
       totals.messages += 1;
@@ -207,7 +256,7 @@ export function createAggregator() {
       updateRange(summary, message.createdAt);
       tokenHistogram.set(tokenCount, (tokenHistogram.get(tokenCount) ?? 0) + 1);
 
-      const key = modelKey(message);
+      const key = explicitModelKey(message) ?? inferredModel ?? 'unknown';
       modelIds.add(key);
       let model = modelMetrics.get(key);
       if (!model) {
@@ -230,16 +279,16 @@ export function createAggregator() {
       model.conversationIds.add(conversation.id);
       if (message.rawModelSlug) model.rawAliasSet.add(message.rawModelSlug);
       updateRange(model, message.createdAt);
-      if (message.createdAt !== undefined && kind !== 'other') {
-        const day = timeKeys(message.createdAt).day;
-        const usage = model.usageByDay[day] ?? { inputTokens: 0, outputTokens: 0 };
+
+      const keys = message.createdAt === undefined ? undefined : timeKeys(message.createdAt);
+      if (keys && kind !== 'other') {
+        const usage = model.usageByDay[keys.day] ?? { inputTokens: 0, outputTokens: 0 };
         if (kind === 'input') usage.inputTokens += tokenCount;
         else usage.outputTokens += tokenCount;
-        model.usageByDay[day] = usage;
+        model.usageByDay[keys.day] = usage;
       }
 
-      if (message.createdAt !== undefined) {
-        const keys = timeKeys(message.createdAt);
+      if (keys) {
         (Object.keys(keys) as BucketKind[]).forEach((bucketKind) => {
           updateBucket(bucketKind, keys[bucketKind], conversation.id, tokenCount);
         });

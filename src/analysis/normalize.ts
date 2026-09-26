@@ -23,8 +23,11 @@ function getConversationId(raw: Record<string, unknown>): string | undefined {
   return asString(raw.id) ?? asString(raw.conversation_id);
 }
 
-function extractText(content: unknown): string {
-  if (!isRecord(content) || !Array.isArray(content.parts)) return '';
+function extractText(content: unknown, quality: QualityCollector): string {
+  if (!isRecord(content) || !Array.isArray(content.parts)) {
+    quality.addRecoverable('message-unsupported-content');
+    return '';
+  }
   const parts: string[] = [];
   for (const part of content.parts) {
     if (typeof part === 'string') {
@@ -59,6 +62,27 @@ function countAttachments(content: unknown, metadata: Record<string, unknown>): 
   return references.size;
 }
 
+const KNOWN_CONVERSATION_KEYS = new Set([
+  'id',
+  'conversation_id',
+  'title',
+  'create_time',
+  'update_time',
+  'mapping',
+  'current_node',
+  'conversation_template_id',
+  'gizmo_id',
+  'is_archived',
+  'is_starred',
+  'safe_urls',
+  'blocked_urls',
+  'default_model_slug',
+  'conversation_origin',
+  'moderation_results',
+  'plugin_ids',
+  'voice'
+]);
+
 const KNOWN_METADATA_KEYS = new Set([
   'model_slug',
   'default_model_slug',
@@ -75,6 +99,12 @@ const KNOWN_METADATA_KEYS = new Set([
   'citations',
   'content_references'
 ]);
+
+function unknownConversationKeys(raw: Record<string, unknown>, quality: QualityCollector): void {
+  for (const key of Object.keys(raw)) {
+    if (!KNOWN_CONVERSATION_KEYS.has(key)) quality.addUnknownSchema(key);
+  }
+}
 
 function unknownMetadataKeys(metadata: Record<string, unknown>, quality: QualityCollector): string[] {
   const keys = Object.keys(metadata).filter((key) => !KNOWN_METADATA_KEYS.has(key));
@@ -104,6 +134,8 @@ export function normalizeConversation(
     quality.addRecoverable('conversation-not-object');
     return null;
   }
+
+  unknownConversationKeys(raw, quality);
 
   const conversationId = getConversationId(raw);
   if (!conversationId) {
@@ -148,7 +180,7 @@ export function normalizeConversation(
     const metadata = getMetadata(message);
     const rawModelSlug = asString(metadata.model_slug) ?? asString(metadata.default_model_slug);
     const resolution = rawModelSlug ? resolveModel(rawModelSlug, options.modelAliases) : undefined;
-    if (resolution) quality.recordModelIdentification(Boolean(resolution.canonicalId));
+    quality.recordModelIdentification(Boolean(resolution?.canonicalId));
 
     const parentNodeId = asString(nodeValue.parent);
     const content = message.content;
@@ -161,7 +193,7 @@ export function normalizeConversation(
       updatedAt: asNumber(message.update_time),
       canonicalModelId: resolution?.canonicalId,
       rawModelSlug,
-      text: extractText(content),
+      text: extractText(content, quality),
       toolEvents: detectToolEvents(metadata),
       attachmentCount: countAttachments(content, metadata),
       unknownMetadataKeys: unknownMetadataKeys(metadata, quality)

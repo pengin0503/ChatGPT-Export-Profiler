@@ -29,6 +29,9 @@ interface MutableCoverage {
   identified: number;
 }
 
+const MAX_QUALITY_ISSUE_DETAILS = 200;
+const MAX_UNKNOWN_SCHEMA_KEYS = 200;
+
 function snapshotCoverage(value: MutableCoverage): CoverageMetric {
   return {
     attempted: value.attempted,
@@ -39,6 +42,7 @@ function snapshotCoverage(value: MutableCoverage): CoverageMetric {
 
 export class QualityCollector {
   private readonly issues: QualityIssue[] = [];
+  private readonly issueKeys = new Set<string>();
   private readonly unknownKeys = new Set<string>();
   private fatalCount = 0;
   private recoverableCount = 0;
@@ -47,25 +51,36 @@ export class QualityCollector {
   private readonly modelCoverage: MutableCoverage = { attempted: 0, identified: 0 };
   private readonly tokenCoverage: MutableCoverage = { attempted: 0, identified: 0 };
 
+  private addIssue(severity: QualitySeverity, code: string): void {
+    const key = `${severity}\u0000${code}`;
+    if (this.issueKeys.has(key)) return;
+    this.issueKeys.add(key);
+    if (this.issues.length < MAX_QUALITY_ISSUE_DETAILS) {
+      this.issues.push({ severity, code });
+    }
+  }
+
   addFatal(code: string): void {
     this.fatalCount += 1;
-    this.issues.push({ severity: 'fatal', code });
+    this.addIssue('fatal', code);
   }
 
   addRecoverable(code: string): void {
     this.recoverableCount += 1;
-    this.issues.push({ severity: 'recoverable', code });
+    this.addIssue('recoverable', code);
   }
 
   addWarning(code: string): void {
     this.warningCount += 1;
-    this.issues.push({ severity: 'warning', code });
+    this.addIssue('warning', code);
   }
 
   addUnknownSchema(key: string): void {
     this.unknownSchemaCount += 1;
-    this.unknownKeys.add(key);
-    this.issues.push({ severity: 'unknownSchema', code: key });
+    if (this.unknownKeys.has(key) || this.unknownKeys.size < MAX_UNKNOWN_SCHEMA_KEYS) {
+      this.unknownKeys.add(key);
+    }
+    this.addIssue('unknownSchema', key);
   }
 
   recordModelIdentification(identified: boolean): void {
