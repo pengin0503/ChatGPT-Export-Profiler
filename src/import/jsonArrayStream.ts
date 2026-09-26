@@ -16,6 +16,7 @@ export async function* splitTopLevelJsonArray(
   const decoder = new TextDecoder();
   let phase: 'before-array' | 'between-values' | 'in-value' | 'after-array' = 'before-array';
   let finished = false;
+  let completedNormally = false;
   let buffer = '';
   let depth = 0;
   let inString = false;
@@ -125,12 +126,13 @@ export async function* splitTopLevelJsonArray(
     if (!finished) {
       throw new Error('Incomplete or truncated top-level JSON array.');
     }
+    completedNormally = true;
   } finally {
-    if (signal?.aborted) {
+    if (!completedNormally) {
       try {
-        await reader.cancel(createAbortError());
+        await reader.cancel(signal?.aborted ? createAbortError() : new Error('JSON array iteration stopped before completion.'));
       } catch {
-        // The source may already be closed.
+        // The source may already be closed or errored.
       }
     }
     reader.releaseLock();
