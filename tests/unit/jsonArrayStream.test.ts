@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { splitTopLevelJsonArray } from '../../src/import/jsonArrayStream';
 
 function chunkUtf8(text: string, pattern: number[]): ReadableStream<Uint8Array> {
@@ -56,5 +56,27 @@ describe('splitTopLevelJsonArray', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(collect(chunkUtf8('[{"id":1}]', [1]), controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('cancels the underlying reader when a consumer stops iteration early', async () => {
+    const cancel = vi.fn();
+    const encoder = new TextEncoder();
+    let emitted = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!emitted) {
+          emitted = true;
+          controller.enqueue(encoder.encode('[{"id":1},'));
+        }
+      },
+      cancel
+    });
+
+    for await (const value of splitTopLevelJsonArray(stream)) {
+      expect(JSON.parse(value)).toEqual({ id: 1 });
+      break;
+    }
+
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 });
