@@ -44,9 +44,9 @@ describe('streamConversationObjects', () => {
     const controller = new AbortController();
 
     await expect(async () => {
-      for await (const _value of streamWithPolicy(file, controller.signal, policy)) {
-        // The restrictive policy must reject before yielding conversation data.
-      }
+      const values: unknown[] = [];
+      for await (const value of streamWithPolicy(file, controller.signal, policy)) values.push(value);
+      expect(values).toEqual([]);
     }).rejects.toMatchObject({ code: 'ZIP_SAFETY_BLOCKED' });
   });
 
