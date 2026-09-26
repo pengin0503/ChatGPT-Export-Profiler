@@ -160,7 +160,8 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
     stage: 'aggregation',
     committedBatches: message.batchId,
     processedConversations: message.processedConversations,
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    modelAliases: activeStart?.modelAliases ? { ...activeStart.modelAliases } : undefined
   };
 
   const db = await openProfilerDb();
