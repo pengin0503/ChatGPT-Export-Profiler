@@ -91,6 +91,7 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
   await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({
     name: 'v1-acceptance-synthetic.zip',
     mimeType: 'application/zip',
+    lastModified: 1_797_100_000_000,
     buffer
   });
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
@@ -158,6 +159,7 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
   await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({
     name: 'v1-acceptance-synthetic.zip',
     mimeType: 'application/zip',
+    lastModified: 1_797_100_000_000,
     buffer
   });
   await expect(page.getByText(/already exists locally/i)).toBeVisible();
