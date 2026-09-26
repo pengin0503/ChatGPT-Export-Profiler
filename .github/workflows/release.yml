@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
+    paths:
+      - '.github/release-requests/**'
 
 permissions:
   contents: write
@@ -11,8 +15,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -20,6 +22,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Resolve release tag
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          else
+            RELEASE_TAG="v$PACKAGE_VERSION"
+          fi
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
       - name: Verify release tag matches package version
         shell: bash
         run: |
