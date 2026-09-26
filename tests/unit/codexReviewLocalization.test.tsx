@@ -72,5 +72,6 @@ describe('Codex review localization regression', () => {
     renderJapanese(<DataQualityPage analysisId="localization-quality" />);
     expect(screen.getByText('解析の信頼性')).toBeVisible();
     expect(await screen.findByRole('heading', { name: 'カバレッジ' })).toBeVisible();
+    expect(screen.getByText('トークナイザー信頼度: 完全一致 0 · 系列一致 0 · フォールバック 0')).toBeVisible();
   });
 });
