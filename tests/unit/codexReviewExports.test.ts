@@ -39,7 +39,7 @@ function maliciousFixture(): AnalyticsExport {
 
 describe('Codex review export hardening regressions', () => {
   it('neutralizes spreadsheet formulas even after spreadsheet-trimmed control characters', () => {
-    const csv = exportCsv(maliciousFixture());
+    const csv = exportCsv(maliciousFixture(), { includeConversationTitles: true });
     expect(csv).toContain("'\t=1+1");
   });
 
