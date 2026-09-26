@@ -163,11 +163,12 @@ export async function inspectExportZip(
     }
 
     if (!ambiguousConversationPayload && shardCandidates.length > 0 && manifestCandidates.length > 0) {
-      if (manifestCandidates.length !== 1 || manifestCandidates[0].uncompressedSize > MAX_MANIFEST_BYTES) {
+      const manifestEntry = manifestCandidates[0];
+      if (manifestCandidates.length !== 1 || manifestEntry.uncompressedSize > MAX_MANIFEST_BYTES || !('getData' in manifestEntry)) {
         blockingIssues.push({ code: 'INVALID_EXPORT_MANIFEST' });
       } else {
         try {
-          const manifestText = await manifestCandidates[0].getData(new TextWriter());
+          const manifestText = await manifestEntry.getData(new TextWriter());
           const validation = validateManifestValue(JSON.parse(manifestText), shardCandidates.map(({ entry }) => entry.filename));
           if (validation === 'invalid') blockingIssues.push({ code: 'INVALID_EXPORT_MANIFEST' });
           if (validation === 'mismatch') blockingIssues.push({ code: 'MANIFEST_SHARD_MISMATCH' });
