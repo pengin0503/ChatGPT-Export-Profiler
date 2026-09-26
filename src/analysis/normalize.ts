@@ -88,7 +88,10 @@ const KNOWN_AUTHOR_KEYS = new Set(['role', 'name', 'metadata']);
 const KNOWN_CONTENT_KEYS = new Set([
   'content_type', 'parts', 'source_analysis_msg_id', 'thoughts', 'content'
 ]);
-const KNOWN_PART_KEYS = new Set(['text', 'content_type', 'asset_pointer', 'file_id']);
+const KNOWN_PART_KEYS = new Set([
+  'text', 'content_type', 'asset_pointer', 'file_id',
+  'width', 'height', 'mime_type', 'size_bytes', 'metadata', 'fovea'
+]);
 
 const KNOWN_METADATA_KEYS = new Set([
   'model_slug', 'default_model_slug', 'tool_name', 'tool_type', 'tool', 'recipient', 'invoked_plugin',

@@ -9,8 +9,17 @@ interface ConversationTableProps {
   onSelect(row: ConversationMetricRecord): void;
 }
 
+function formatCost(row: ConversationMetricRecord, locale: string, coverageGap: string): string {
+  if (!row.pricingCoverageComplete) return coverageGap;
+  return new Intl.NumberFormat(locale === 'ja' ? 'ja-JP' : 'en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 6
+  }).format(row.apiEquivalentCost ?? 0);
+}
+
 export function ConversationTable({ rows, total, onSelect }: ConversationTableProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const parentRef = useRef<HTMLDivElement>(null);
   // TanStack Virtual intentionally returns imperative functions that React Compiler cannot memoize safely.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -34,6 +43,7 @@ export function ConversationTable({ rows, total, onSelect }: ConversationTablePr
           <span role="columnheader">{t('conversations.models')}</span>
           <span role="columnheader">{t('conversations.messages')}</span>
           <span role="columnheader">{t('conversations.tokens')}</span>
+          <span role="columnheader">{t('conversations.apiEquivalentCost')}</span>
           <span role="columnheader">{t('conversations.signals')}</span>
         </div>
         <div ref={parentRef} className="virtual-scroll">
@@ -55,7 +65,12 @@ export function ConversationTable({ rows, total, onSelect }: ConversationTablePr
                   onClick={() => onSelect(row)}
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: `${item.size}px`, transform: `translateY(${item.start}px)` }}
                 >
-                  <span role="cell">{row.title}</span><span role="cell">{row.modelIds.join(', ') || t('conversations.unknown')}</span><span role="cell">{row.messages.toLocaleString()}</span><span role="cell">{row.visibleTokens.toLocaleString()}</span><span role="cell">{signals}</span>
+                  <span role="cell">{row.title}</span>
+                  <span role="cell">{row.modelIds.join(', ') || t('conversations.unknown')}</span>
+                  <span role="cell">{row.messages.toLocaleString()}</span>
+                  <span role="cell">{row.visibleTokens.toLocaleString()}</span>
+                  <span role="cell">{formatCost(row, locale, t('conversations.costCoverageGap'))}</span>
+                  <span role="cell">{signals}</span>
                 </button>
               );
             })}

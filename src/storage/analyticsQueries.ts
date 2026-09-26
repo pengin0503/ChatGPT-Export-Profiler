@@ -1,5 +1,11 @@
+import { calculateVisibleCost, findPrice, type PricingRecord } from '../analysis/pricing';
 import { openProfilerDb } from './db';
-import type { AnalysisOwnedRecord, ConversationMetricRecord, DailyConversationUsage } from './db';
+import type {
+  AnalysisOwnedRecord,
+  ConversationMetricRecord,
+  DailyConversationUsage,
+  StoredModelTokenUsage
+} from './db';
 
 export interface DateRange {
   from?: number;
@@ -12,6 +18,7 @@ export type ConversationSort =
   | 'inputTokens-desc'
   | 'outputTokens-desc'
   | 'messages-desc'
+  | 'cost-desc'
   | 'duration-desc'
   | 'newest'
   | 'oldest';
@@ -24,6 +31,7 @@ export interface ConversationQueryOptions {
   hasWeb?: boolean;
   hasFiles?: boolean;
   hasTools?: boolean;
+  pricing?: readonly PricingRecord[];
   sort?: ConversationSort;
   offset?: number;
   limit?: number;
@@ -67,6 +75,18 @@ export interface StoredTimelineMetric {
   messages: number;
   conversations: number;
   visibleTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  otherTokens: number;
+  webSearches: number;
+  toolEvents: number;
+  usageByDay: Record<string, Record<string, StoredModelTokenUsage>>;
+}
+
+export interface PricingAwareCost {
+  cost: number;
+  coverageComplete: boolean;
+  hasUsage: boolean;
 }
 
 function toSeconds(timestamp: number): number {
@@ -100,7 +120,7 @@ function dayStartSeconds(day: string): number | undefined {
   return Number.isFinite(milliseconds) ? milliseconds / 1000 : undefined;
 }
 
-function dayInRange(day: string, range?: DateRange): boolean {
+export function dayInRange(day: string, range?: DateRange): boolean {
   if (!range || (range.from === undefined && range.to === undefined)) return true;
   const start = dayStartSeconds(day);
   if (start === undefined) return false;
@@ -119,6 +139,16 @@ function dailyEntries(row: ConversationMetricRecord): Array<[string, DailyConver
     Number.isFinite(usage.messages) &&
     Number.isFinite(usage.visibleTokens)
   );
+}
+
+function cloneDailyUsage(usage: DailyConversationUsage): DailyConversationUsage {
+  return {
+    ...usage,
+    modelIds: [...usage.modelIds],
+    ...(usage.byModel ? {
+      byModel: Object.fromEntries(Object.entries(usage.byModel).map(([modelId, tokens]) => [modelId, { ...tokens }]))
+    } : {})
+  };
 }
 
 function projectConversation(row: ConversationMetricRecord, range?: DateRange): ConversationMetricRecord | null {
@@ -147,7 +177,58 @@ function projectConversation(row: ConversationMetricRecord, range?: DateRange): 
     ...row,
     ...totals,
     modelIds: [...modelIds].sort(),
-    usageByDay: Object.fromEntries(matching.map(([day, usage]) => [day, { ...usage, modelIds: [...usage.modelIds] }]))
+    usageByDay: Object.fromEntries(matching.map(([day, usage]) => [day, cloneDailyUsage(usage)]))
+  };
+}
+
+export function calculatePricingAwareCost(
+  usageByDay: Readonly<Record<string, Readonly<Record<string, StoredModelTokenUsage>>>> | undefined,
+  pricing: readonly PricingRecord[]
+): PricingAwareCost {
+  let cost = 0;
+  let coverageComplete = true;
+  let hasUsage = false;
+  for (const [day, models] of Object.entries(usageByDay ?? {})) {
+    const timestamp = Date.parse(`${day}T12:00:00.000Z`);
+    if (!Number.isFinite(timestamp)) {
+      coverageComplete = false;
+      continue;
+    }
+    for (const [modelId, usage] of Object.entries(models)) {
+      if (usage.inputTokens === 0 && usage.outputTokens === 0) continue;
+      hasUsage = true;
+      const record = findPrice(modelId, timestamp, pricing);
+      if (!record) {
+        coverageComplete = false;
+        continue;
+      }
+      cost += calculateVisibleCost(usage.inputTokens, usage.outputTokens, record);
+    }
+  }
+  return { cost, coverageComplete: hasUsage && coverageComplete, hasUsage };
+}
+
+function conversationUsageByDay(row: ConversationMetricRecord): Record<string, Record<string, StoredModelTokenUsage>> | undefined {
+  const entries = dailyEntries(row);
+  if (entries.length === 0) return undefined;
+  const result: Record<string, Record<string, StoredModelTokenUsage>> = {};
+  for (const [day, usage] of entries) {
+    if (!usage.byModel) return undefined;
+    result[day] = Object.fromEntries(Object.entries(usage.byModel).map(([modelId, tokens]) => [modelId, { ...tokens }]));
+  }
+  return result;
+}
+
+function attachConversationPricing(
+  row: ConversationMetricRecord,
+  pricing?: readonly PricingRecord[]
+): ConversationMetricRecord {
+  if (!pricing) return row;
+  const result = calculatePricingAwareCost(conversationUsageByDay(row), pricing);
+  return {
+    ...row,
+    apiEquivalentCost: result.cost,
+    pricingCoverageComplete: result.coverageComplete
   };
 }
 
@@ -156,12 +237,14 @@ function rowComparator(sort: ConversationSort): (a: ConversationMetricRecord, b:
   const duration = (row: ConversationMetricRecord) =>
     Math.max(0, normalized(row.lastTimestamp ?? row.firstTimestamp, 0) - normalized(row.firstTimestamp ?? row.lastTimestamp, 0));
   const newest = (row: ConversationMetricRecord) => normalized(row.lastTimestamp ?? row.firstTimestamp, Number.NEGATIVE_INFINITY);
+  const cost = (row: ConversationMetricRecord) => row.pricingCoverageComplete ? (row.apiEquivalentCost ?? 0) : Number.NEGATIVE_INFINITY;
   const comparators: Record<ConversationSort, (a: ConversationMetricRecord, b: ConversationMetricRecord) => number> = {
     'visibleTokens-desc': (a, b) => b.visibleTokens - a.visibleTokens,
     'visibleTokens-asc': (a, b) => a.visibleTokens - b.visibleTokens,
     'inputTokens-desc': (a, b) => b.inputTokens - a.inputTokens,
     'outputTokens-desc': (a, b) => b.outputTokens - a.outputTokens,
     'messages-desc': (a, b) => b.messages - a.messages,
+    'cost-desc': (a, b) => cost(b) - cost(a),
     'duration-desc': (a, b) => duration(b) - duration(a),
     newest: (a, b) => newest(b) - newest(a),
     oldest: (a, b) => newest(a) - newest(b)
@@ -174,8 +257,9 @@ function projectAndFilterConversation(
   source: ConversationMetricRecord,
   options: ConversationQueryOptions
 ): ConversationMetricRecord | null {
-  const row = projectConversation(source, options.range);
-  if (!row) return null;
+  const projected = projectConversation(source, options.range);
+  if (!projected) return null;
+  const row = attachConversationPricing(projected, options.pricing);
   if (options.modelId && !row.modelIds.includes(options.modelId)) return null;
   if (options.minTokens !== undefined && row.visibleTokens < options.minTokens) return null;
   if (options.maxTokens !== undefined && row.visibleTokens > options.maxTokens) return null;
@@ -272,15 +356,6 @@ async function countConversationRows(
   }
 }
 
-async function listConversationRows(analysisId: string): Promise<ConversationMetricRecord[]> {
-  const db = await openProfilerDb();
-  try {
-    return await db.getAllFromIndex('conversationMetrics', 'by-analysis', analysisId);
-  } finally {
-    db.close();
-  }
-}
-
 async function scanConversationPage(
   analysisId: string,
   options: ConversationQueryOptions
@@ -328,12 +403,34 @@ export async function queryConversationMetrics(
   return scanConversationPage(analysisId, options);
 }
 
+export async function forEachConversationMetric(
+  analysisId: string,
+  visitor: (row: ConversationMetricRecord) => void | Promise<void>,
+  options: Omit<ConversationQueryOptions, 'offset' | 'limit' | 'sort'> = {}
+): Promise<void> {
+  const db = await openProfilerDb();
+  try {
+    const tx = db.transaction('conversationMetrics', 'readonly');
+    let cursor = await tx.store.index('by-analysis').openCursor(analysisId);
+    while (cursor) {
+      const row = projectAndFilterConversation(cursor.value, options);
+      if (row) await visitor(row);
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  } finally {
+    db.close();
+  }
+}
+
 export async function listAllConversationMetrics(
   analysisId: string,
   options: Omit<ConversationQueryOptions, 'offset' | 'limit'> = {}
 ): Promise<ConversationMetricRecord[]> {
-  const result = await queryConversationMetrics(analysisId, { ...options, offset: 0, limit: Number.MAX_SAFE_INTEGER });
-  return result.rows;
+  const rows: ConversationMetricRecord[] = [];
+  await forEachConversationMetric(analysisId, (row) => { rows.push(row); }, options);
+  rows.sort(rowComparator(options.sort ?? 'newest'));
+  return rows;
 }
 
 function utcDay(timestamp: number): string {
@@ -342,25 +439,24 @@ function utcDay(timestamp: number): string {
 }
 
 export async function getOverviewMetrics(analysisId: string, range?: DateRange): Promise<OverviewMetrics> {
-  const sourceRows = await listConversationRows(analysisId);
-  const rows = sourceRows.flatMap((row) => {
-    const projected = projectConversation(row, range);
-    return projected ? [projected] : [];
-  });
-  const totals = rows.reduce(
-    (acc, row) => ({
-      conversations: acc.conversations + 1,
-      messages: acc.messages + row.messages,
-      visibleTokens: acc.visibleTokens + row.visibleTokens
-    }),
-    { conversations: 0, messages: 0, visibleTokens: 0 }
-  );
-  const largestConversation = [...rows].sort(
-    (a, b) => b.visibleTokens - a.visibleTokens || a.conversationId.localeCompare(b.conversationId)
-  )[0] ?? null;
-
+  const totals = { conversations: 0, messages: 0, visibleTokens: 0 };
+  let largestConversation: ConversationMetricRecord | null = null;
   const days = new Map<string, { messages: number; conversations: number; visibleTokens: number }>();
-  for (const source of sourceRows) {
+
+  await forEachConversationMetric(analysisId, (source) => {
+    const projected = projectConversation(source, range);
+    if (!projected) return;
+    totals.conversations += 1;
+    totals.messages += projected.messages;
+    totals.visibleTokens += projected.visibleTokens;
+    if (
+      largestConversation === null ||
+      projected.visibleTokens > largestConversation.visibleTokens ||
+      (projected.visibleTokens === largestConversation.visibleTokens && projected.conversationId.localeCompare(largestConversation.conversationId) < 0)
+    ) {
+      largestConversation = projected;
+    }
+
     const entries = dailyEntries(source);
     if (entries.length > 0) {
       for (const [key, usage] of entries) {
@@ -371,19 +467,17 @@ export async function getOverviewMetrics(analysisId: string, range?: DateRange):
         value.visibleTokens += usage.visibleTokens;
         days.set(key, value);
       }
-      continue;
+      return;
     }
-    const projected = projectConversation(source, range);
-    if (!projected) continue;
     const timestamp = timestampFor(projected);
-    if (timestamp === undefined) continue;
+    if (timestamp === undefined) return;
     const key = utcDay(timestamp);
     const value = days.get(key) ?? { messages: 0, conversations: 0, visibleTokens: 0 };
     value.messages += projected.messages;
     value.conversations += 1;
     value.visibleTokens += projected.visibleTokens;
     days.set(key, value);
-  }
+  });
 
   const peak = [...days.entries()].sort(
     (a, b) => b[1].messages - a[1].messages || b[1].visibleTokens - a[1].visibleTokens || a[0].localeCompare(b[0])
@@ -410,52 +504,56 @@ function optionalNumber(value: unknown): number | undefined {
 export async function getModelMetrics(analysisId: string): Promise<StoredModelMetric[]> {
   const db = await openProfilerDb();
   try {
-    const records = await db.getAllFromIndex('modelMetrics', 'by-analysis', analysisId);
     const merged = new Map<string, StoredModelMetric & { aliases: Set<string> }>();
-    for (const record of records) {
-      const value = recordValue(record);
+    const tx = db.transaction('modelMetrics', 'readonly');
+    let cursor = await tx.store.index('by-analysis').openCursor(analysisId);
+    while (cursor) {
+      const value = recordValue(cursor.value);
       const modelId = typeof value.modelId === 'string' ? value.modelId : undefined;
-      if (!modelId) continue;
-      let target = merged.get(modelId);
-      if (!target) {
-        target = {
-          modelId,
-          messages: 0,
-          conversations: 0,
-          visibleTokens: 0,
-          inputTokens: 0,
-          outputTokens: 0,
-          otherTokens: 0,
-          rawAliases: [],
-          usageByDay: {},
-          aliases: new Set()
-        };
-        merged.set(modelId, target);
-      }
-      target.messages += number(value.messages);
-      target.conversations += number(value.conversations);
-      target.visibleTokens += number(value.visibleTokens);
-      target.inputTokens += number(value.inputTokens);
-      target.outputTokens += number(value.outputTokens);
-      target.otherTokens += number(value.otherTokens);
-      if (Array.isArray(value.rawAliases)) {
-        for (const alias of value.rawAliases) if (typeof alias === 'string') target.aliases.add(alias);
-      }
-      if (typeof value.usageByDay === 'object' && value.usageByDay !== null && !Array.isArray(value.usageByDay)) {
-        for (const [day, usage] of Object.entries(value.usageByDay)) {
-          if (typeof usage !== 'object' || usage === null || Array.isArray(usage)) continue;
-          const daily = usage as Record<string, unknown>;
-          const existing = target.usageByDay[day] ?? { inputTokens: 0, outputTokens: 0 };
-          existing.inputTokens += number(daily.inputTokens);
-          existing.outputTokens += number(daily.outputTokens);
-          target.usageByDay[day] = existing;
+      if (modelId) {
+        let target = merged.get(modelId);
+        if (!target) {
+          target = {
+            modelId,
+            messages: 0,
+            conversations: 0,
+            visibleTokens: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            otherTokens: 0,
+            rawAliases: [],
+            usageByDay: {},
+            aliases: new Set()
+          };
+          merged.set(modelId, target);
         }
+        target.messages += number(value.messages);
+        target.conversations += number(value.conversations);
+        target.visibleTokens += number(value.visibleTokens);
+        target.inputTokens += number(value.inputTokens);
+        target.outputTokens += number(value.outputTokens);
+        target.otherTokens += number(value.otherTokens);
+        if (Array.isArray(value.rawAliases)) {
+          for (const alias of value.rawAliases) if (typeof alias === 'string') target.aliases.add(alias);
+        }
+        if (typeof value.usageByDay === 'object' && value.usageByDay !== null && !Array.isArray(value.usageByDay)) {
+          for (const [day, usage] of Object.entries(value.usageByDay)) {
+            if (typeof usage !== 'object' || usage === null || Array.isArray(usage)) continue;
+            const daily = usage as Record<string, unknown>;
+            const existing = target.usageByDay[day] ?? { inputTokens: 0, outputTokens: 0 };
+            existing.inputTokens += number(daily.inputTokens);
+            existing.outputTokens += number(daily.outputTokens);
+            target.usageByDay[day] = existing;
+          }
+        }
+        const first = optionalNumber(value.firstTimestamp);
+        const last = optionalNumber(value.lastTimestamp);
+        if (first !== undefined) target.firstTimestamp = target.firstTimestamp === undefined ? first : Math.min(target.firstTimestamp, first);
+        if (last !== undefined) target.lastTimestamp = target.lastTimestamp === undefined ? last : Math.max(target.lastTimestamp, last);
       }
-      const first = optionalNumber(value.firstTimestamp);
-      const last = optionalNumber(value.lastTimestamp);
-      if (first !== undefined) target.firstTimestamp = target.firstTimestamp === undefined ? first : Math.min(target.firstTimestamp, first);
-      if (last !== undefined) target.lastTimestamp = target.lastTimestamp === undefined ? last : Math.max(target.lastTimestamp, last);
+      cursor = await cursor.continue();
     }
+    await tx.done;
     return [...merged.values()]
       .map(({ aliases, ...value }) => ({ ...value, rawAliases: [...aliases].sort() }))
       .sort((a, b) => b.visibleTokens - a.visibleTokens || a.modelId.localeCompare(b.modelId));
@@ -501,20 +599,62 @@ export async function getTopModelId(analysisId: string, range?: DateRange): Prom
   return ranked[0]?.modelId;
 }
 
+function mergeTimelineUsage(
+  target: Record<string, Record<string, StoredModelTokenUsage>>,
+  raw: unknown
+): void {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return;
+  for (const [day, modelValue] of Object.entries(raw)) {
+    if (typeof modelValue !== 'object' || modelValue === null || Array.isArray(modelValue)) continue;
+    const dayTarget = target[day] ?? {};
+    for (const [modelId, usageValue] of Object.entries(modelValue)) {
+      if (typeof usageValue !== 'object' || usageValue === null || Array.isArray(usageValue)) continue;
+      const usage = usageValue as Record<string, unknown>;
+      const current = dayTarget[modelId] ?? { inputTokens: 0, outputTokens: 0 };
+      current.inputTokens += number(usage.inputTokens);
+      current.outputTokens += number(usage.outputTokens);
+      dayTarget[modelId] = current;
+    }
+    target[day] = dayTarget;
+  }
+}
+
 export async function getTimelineMetrics(analysisId: string, kind: TimelineKind): Promise<StoredTimelineMetric[]> {
   const db = await openProfilerDb();
   try {
-    const records = await db.getAllFromIndex('timelineMetrics', 'by-analysis', analysisId);
     const merged = new Map<string, StoredTimelineMetric>();
-    for (const record of records) {
-      const value = recordValue(record);
-      if (value.kind !== kind || typeof value.key !== 'string') continue;
-      const current = merged.get(value.key) ?? { kind, key: value.key, messages: 0, conversations: 0, visibleTokens: 0 };
-      current.messages += number(value.messages);
-      current.conversations += number(value.conversations);
-      current.visibleTokens += number(value.visibleTokens);
-      merged.set(value.key, current);
+    const tx = db.transaction('timelineMetrics', 'readonly');
+    let cursor = await tx.store.index('by-analysis').openCursor(analysisId);
+    while (cursor) {
+      const value = recordValue(cursor.value);
+      if (value.kind === kind && typeof value.key === 'string') {
+        const current = merged.get(value.key) ?? {
+          kind,
+          key: value.key,
+          messages: 0,
+          conversations: 0,
+          visibleTokens: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          otherTokens: 0,
+          webSearches: 0,
+          toolEvents: 0,
+          usageByDay: {}
+        };
+        current.messages += number(value.messages);
+        current.conversations += number(value.conversations);
+        current.visibleTokens += number(value.visibleTokens);
+        current.inputTokens += number(value.inputTokens);
+        current.outputTokens += number(value.outputTokens);
+        current.otherTokens += number(value.otherTokens);
+        current.webSearches += number(value.webSearches);
+        current.toolEvents += number(value.toolEvents);
+        mergeTimelineUsage(current.usageByDay, value.usageByDay);
+        merged.set(value.key, current);
+      }
+      cursor = await cursor.continue();
     }
+    await tx.done;
     return [...merged.values()].sort((a, b) => a.key.localeCompare(b.key));
   } finally {
     db.close();

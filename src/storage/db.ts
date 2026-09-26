@@ -25,6 +25,11 @@ export interface StoredConversationRecord {
   updatedAt?: number;
 }
 
+export interface StoredModelTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface DailyConversationUsage {
   messages: number;
   visibleTokens: number;
@@ -32,6 +37,8 @@ export interface DailyConversationUsage {
   outputTokens: number;
   otherTokens: number;
   modelIds: string[];
+  /** Added in analysis schema v3. Older completed analyses may not have this field. */
+  byModel?: Record<string, StoredModelTokenUsage>;
 }
 
 export interface ConversationMetricRecord {
@@ -50,6 +57,9 @@ export interface ConversationMetricRecord {
   hasFiles: boolean;
   hasTools: boolean;
   usageByDay?: Record<string, DailyConversationUsage>;
+  /** Read-model fields calculated from the active local pricing history; not persisted by the analyzer. */
+  apiEquivalentCost?: number;
+  pricingCoverageComplete?: boolean;
 }
 
 export interface AnalysisOwnedRecord {

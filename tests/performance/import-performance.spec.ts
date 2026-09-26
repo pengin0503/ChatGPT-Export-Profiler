@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 
-const fixturePath = resolve('tests/fixtures/generated-1k.zip');
+const fixturePath = resolve(process.env.PERF_FIXTURE ?? 'tests/fixtures/generated-1k.zip');
+const expectedConversations = Number(process.env.PERF_CONVERSATIONS ?? '1000');
+const importVisibilityTimeoutMs = Number(process.env.PERF_IMPORT_TIMEOUT_MS ?? '90000');
 const STEADY_STATE_LONG_TASK_LIMIT_MS = 300;
 
 test('records synthetic import time and keeps steady-state analytics responsive', async ({ page }, testInfo) => {
@@ -30,11 +32,11 @@ test('records synthetic import time and keeps steady-state analytics responsive'
   await page.reload();
   const importStartedAt = Date.now();
   await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({
-    name: 'generated-1k.zip',
+    name: 'generated-performance.zip',
     mimeType: 'application/zip',
     buffer: fixture
   });
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: importVisibilityTimeoutMs });
   const importElapsedMs = Date.now() - importStartedAt;
 
   await page.evaluate(() => {
@@ -69,7 +71,7 @@ test('records synthetic import time and keeps steady-state analytics responsive'
 
   await testInfo.attach('performance-summary.json', {
     body: Buffer.from(JSON.stringify({
-      conversations: 1000,
+      conversations: expectedConversations,
       importElapsedMs,
       steadyStateLongTasks: steadyState
     }, null, 2)),

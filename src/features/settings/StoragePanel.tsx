@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { formatMessage, useI18n } from '../../i18n';
 import { analysisRepository, type AnalysisRecord } from '../../storage/repositories';
 
 interface StoragePanelProps {
@@ -7,8 +8,8 @@ interface StoragePanelProps {
   onAnalysisDeleted?(): void;
 }
 
-function formatBytes(value?: number): string {
-  if (value === undefined) return 'unknown';
+function formatBytes(value: number | undefined, unknownLabel: string): string {
+  if (value === undefined) return unknownLabel;
   const units = ['B', 'KB', 'MB', 'GB'];
   let amount = value;
   let unit = 0;
@@ -20,6 +21,7 @@ function formatBytes(value?: number): string {
 }
 
 export function StoragePanel({ analysisId, protectedAnalysisId, onAnalysisDeleted }: StoragePanelProps) {
+  const { t } = useI18n();
   const [usage, setUsage] = useState<number>();
   const [quota, setQuota] = useState<number>();
   const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);
@@ -56,17 +58,22 @@ export function StoragePanel({ analysisId, protectedAnalysisId, onAnalysisDelete
 
   async function removeAnalysis(id: string): Promise<void> {
     await analysisRepository.delete(id);
-    setStatus(id === analysisId ? 'Deleted the current local analysis.' : 'Deleted a stored local analysis.');
+    setStatus(id === analysisId ? t('settings.storage.deletedCurrent') : t('settings.storage.deletedStored'));
     if (id === analysisId) onAnalysisDeleted?.();
     await refresh();
   }
 
+  const unknown = t('settings.storage.unknown');
+
   return (
     <section className="panel" aria-labelledby="storage-heading">
-      <h3 id="storage-heading">Storage</h3>
-      <p className="muted-copy">Browser storage: {formatBytes(usage)} used of {formatBytes(quota)} available quota.</p>
+      <h3 id="storage-heading">{t('settings.storage.title')}</h3>
+      <p className="muted-copy">{formatMessage(t('settings.storage.usage'), {
+        usage: formatBytes(usage, unknown),
+        quota: formatBytes(quota, unknown)
+      })}</p>
       {protectedAnalysisId ? (
-        <p className="muted-copy">The paused import and its durable checkpoint are protected while you remove older analyses.</p>
+        <p className="muted-copy">{t('settings.storage.protected')}</p>
       ) : null}
       {analysisId && analysisId !== protectedAnalysisId ? (
         <button
@@ -74,25 +81,25 @@ export function StoragePanel({ analysisId, protectedAnalysisId, onAnalysisDelete
           className="danger-action"
           onClick={() => void removeAnalysis(analysisId)}
         >
-          Delete current analysis
+          {t('settings.storage.deleteCurrent')}
         </button>
       ) : null}
       <div className="storage-analysis-list">
-        <h4>Stored prior analyses</h4>
+        <h4>{t('settings.storage.prior')}</h4>
         {priorAnalyses.length === 0 ? (
-          <p className="muted-copy">No other stored analyses are available to delete.</p>
+          <p className="muted-copy">{t('settings.storage.none')}</p>
         ) : (
           <ul className="compact-list">
             {priorAnalyses.map((analysis, index) => (
               <li key={analysis.id}>
-                <span>{analysis.status === 'complete' ? 'Completed' : 'Incomplete'} local analysis</span>{' '}
+                <span>{analysis.status === 'complete' ? t('settings.storage.completed') : t('settings.storage.incomplete')}</span>{' '}
                 <button
                   type="button"
                   className="danger-action"
-                  aria-label={`Delete stored analysis ${index + 1}`}
+                  aria-label={formatMessage(t('settings.storage.deleteStoredAria'), { index: index + 1 })}
                   onClick={() => void removeAnalysis(analysis.id)}
                 >
-                  Delete
+                  {t('settings.storage.delete')}
                 </button>
               </li>
             ))}

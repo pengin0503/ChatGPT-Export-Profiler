@@ -77,9 +77,7 @@ describe('createAggregator', () => {
     expect(result.byModel['gpt-6-sol']?.messages).toBe(3);
     expect(result.byModel['gpt-5.6-sol']?.messages).toBe(2);
     expect(result.byModel['gpt-6-sol']?.conversations).toBe(2);
-    const dailyUsage = (result.byModel['gpt-6-sol'] as unknown as {
-      usageByDay?: Record<string, { inputTokens: number; outputTokens: number }>
-    }).usageByDay;
+    const dailyUsage = result.byModel['gpt-6-sol']?.usageByDay;
     expect(Object.keys(dailyUsage ?? {}).sort()).toEqual(['2026-09-20', '2026-09-21']);
     expect(dailyUsage?.['2026-09-20']?.inputTokens).toBeGreaterThan(0);
     expect(dailyUsage?.['2026-09-20']?.outputTokens).toBeGreaterThan(0);
@@ -102,6 +100,26 @@ describe('createAggregator', () => {
 
     expect(result.conversations).toHaveLength(3);
     expect(result.conversations[0]).not.toHaveProperty('text');
+  });
+
+  it('retains per-model daily usage and tool counts for pricing-aware analytics', async () => {
+    const prompt = message('pricing-aware', 'u1', 'user', 'synthetic prompt', epochSeconds('2026-09-22T10:00:00Z'), 'gpt-6-sol');
+    prompt.toolEvents = [{ kind: 'web-search', rawType: 'web_search' }];
+    const response = message('pricing-aware', 'a1', 'assistant', 'synthetic response', epochSeconds('2026-09-22T10:05:00Z'), 'gpt-6-sol', 'u1');
+    response.toolEvents = [{ kind: 'python', rawType: 'python' }];
+    const aggregator = createAggregator();
+
+    await aggregator.acceptConversation(conversation('pricing-aware', 'Pricing aware', [prompt, response]));
+    const result = aggregator.finish();
+    const hour = result.buckets.hour['2026-09-22T10'];
+    const daily = result.conversations[0]?.usageByDay['2026-09-22'];
+
+    expect(hour?.webSearches).toBe(1);
+    expect(hour?.toolEvents).toBe(2);
+    expect(hour?.usageByDay['2026-09-22']?.['gpt-6-sol']?.inputTokens).toBeGreaterThan(0);
+    expect(hour?.usageByDay['2026-09-22']?.['gpt-6-sol']?.outputTokens).toBeGreaterThan(0);
+    expect(daily?.byModel['gpt-6-sol']?.inputTokens).toBeGreaterThan(0);
+    expect(daily?.byModel['gpt-6-sol']?.outputTokens).toBeGreaterThan(0);
   });
 
   it('reports fallback tokenization separately instead of counting it as identified coverage', async () => {

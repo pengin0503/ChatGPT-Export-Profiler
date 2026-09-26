@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fingerprintImport } from '../../analysis/fingerprint';
+import { getOverviewMetrics } from '../../storage/analyticsQueries';
 import { ImportController } from './importController';
 import type { ImportStage } from '../../storage/db';
 import {
   analysisRepository,
   checkpointRepository,
-  metricsRepository,
   type ImportCheckpoint
 } from '../../storage/repositories';
 import { inspectExportZip } from '../../import/zipInspector';
@@ -59,15 +59,8 @@ export interface UseImportSessionOptions {
 }
 
 async function readSummary(analysisId: string): Promise<ImportSummary> {
-  const records = await metricsRepository.listConversationMetrics(analysisId);
-  return records.reduce<ImportSummary>(
-    (summary, record) => ({
-      conversations: summary.conversations + 1,
-      messages: summary.messages + record.messages,
-      visibleTokens: summary.visibleTokens + record.visibleTokens
-    }),
-    { conversations: 0, messages: 0, visibleTokens: 0 }
-  );
+  const overview = await getOverviewMetrics(analysisId);
+  return { ...overview.totals };
 }
 
 function failureState(error: unknown): ImportSessionState {

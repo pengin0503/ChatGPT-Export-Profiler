@@ -1,7 +1,7 @@
 export type ExportMetricProvenance = 'observed' | 'calculated' | 'estimated' | 'reported';
 
 export interface AnalyticsExportConversation {
-  title: string;
+  title?: string;
   visibleTokens: number;
   messages: number;
   modelIds: string[];
@@ -59,7 +59,26 @@ export interface AnalyticsExport {
   };
 }
 
-export function sanitizeAnalyticsExport(value: AnalyticsExport): AnalyticsExport {
+export interface AnalyticsExportPrivacyOptions {
+  includeConversationTitles?: boolean;
+}
+
+export function sanitizeAnalyticsExportConversation(
+  value: AnalyticsExportConversation,
+  options: AnalyticsExportPrivacyOptions = {}
+): AnalyticsExportConversation {
+  return {
+    ...(options.includeConversationTitles && value.title !== undefined ? { title: value.title } : {}),
+    visibleTokens: value.visibleTokens,
+    messages: value.messages,
+    modelIds: [...value.modelIds]
+  };
+}
+
+export function sanitizeAnalyticsExport(
+  value: AnalyticsExport,
+  options: AnalyticsExportPrivacyOptions = {}
+): AnalyticsExport {
   return {
     schemaVersion: 1,
     generatedAt: value.generatedAt,
@@ -68,7 +87,7 @@ export function sanitizeAnalyticsExport(value: AnalyticsExport): AnalyticsExport
       messages: value.overview.messages,
       visibleTokens: value.overview.visibleTokens,
       peakDay: value.overview.peakDay,
-      largestConversationTitle: value.overview.largestConversationTitle
+      largestConversationTitle: options.includeConversationTitles ? value.overview.largestConversationTitle : null
     },
     models: value.models.map((model) => ({
       modelId: model.modelId,
@@ -79,12 +98,7 @@ export function sanitizeAnalyticsExport(value: AnalyticsExport): AnalyticsExport
       conversations: model.conversations,
       rawAliases: [...model.rawAliases]
     })),
-    conversations: value.conversations.map((conversation) => ({
-      title: conversation.title,
-      visibleTokens: conversation.visibleTokens,
-      messages: conversation.messages,
-      modelIds: [...conversation.modelIds]
-    })),
+    conversations: value.conversations.map((conversation) => sanitizeAnalyticsExportConversation(conversation, options)),
     ...(value.cost ? {
       cost: {
         ...(value.cost.visibleApiEquivalentUsd !== undefined
@@ -120,6 +134,6 @@ export function sanitizeAnalyticsExport(value: AnalyticsExport): AnalyticsExport
   };
 }
 
-export function exportJson(value: AnalyticsExport): string {
-  return JSON.stringify(sanitizeAnalyticsExport(value), null, 2);
+export function exportJson(value: AnalyticsExport, options: AnalyticsExportPrivacyOptions = {}): string {
+  return JSON.stringify(sanitizeAnalyticsExport(value, options), null, 2);
 }

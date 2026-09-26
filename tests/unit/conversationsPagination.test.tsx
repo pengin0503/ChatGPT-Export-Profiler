@@ -11,6 +11,10 @@ vi.mock('../../src/storage/analyticsQueries', () => ({
   queryConversationMetrics
 }));
 
+vi.mock('../../src/analysis/pricingHistory', () => ({
+  loadPricingRecords: vi.fn().mockResolvedValue([])
+}));
+
 import { ConversationsPage } from '../../src/features/conversations/ConversationsPage';
 
 function row(index: number): ConversationMetricRecord {

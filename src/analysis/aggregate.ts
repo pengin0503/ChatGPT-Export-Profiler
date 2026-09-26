@@ -13,10 +13,21 @@ export interface AggregateTotals {
   otherTokens: number;
 }
 
+export interface ModelTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface AggregateBucket {
   messages: number;
   conversations: number;
   visibleTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  otherTokens: number;
+  webSearches: number;
+  toolEvents: number;
+  usageByDay: Record<string, Record<string, ModelTokenUsage>>;
 }
 
 export interface ModelMetric {
@@ -30,7 +41,7 @@ export interface ModelMetric {
   rawAliases: string[];
   firstTimestamp?: number;
   lastTimestamp?: number;
-  usageByDay: Record<string, { inputTokens: number; outputTokens: number }>;
+  usageByDay: Record<string, ModelTokenUsage>;
 }
 
 export interface ConversationDailyUsage {
@@ -40,6 +51,7 @@ export interface ConversationDailyUsage {
   outputTokens: number;
   otherTokens: number;
   modelIds: string[];
+  byModel: Record<string, ModelTokenUsage>;
 }
 
 export interface ConversationMetric {
@@ -147,6 +159,28 @@ function createEmptyTotals(): AggregateTotals {
   };
 }
 
+function createEmptyBucket(): MutableBucket {
+  return {
+    messages: 0,
+    conversations: 0,
+    visibleTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    otherTokens: 0,
+    webSearches: 0,
+    toolEvents: 0,
+    usageByDay: {},
+    conversationIds: new Set()
+  };
+}
+
+function cloneUsageByDay(value: Record<string, Record<string, ModelTokenUsage>>): Record<string, Record<string, ModelTokenUsage>> {
+  return Object.fromEntries(Object.entries(value).map(([day, models]) => [
+    day,
+    Object.fromEntries(Object.entries(models).map(([modelId, usage]) => [modelId, { ...usage }]))
+  ]));
+}
+
 function updateRange(target: { firstTimestamp?: number; lastTimestamp?: number }, timestamp?: number): void {
   if (timestamp === undefined || toMilliseconds(timestamp) === undefined) return;
   target.firstTimestamp = target.firstTimestamp === undefined ? timestamp : Math.min(target.firstTimestamp, timestamp);
@@ -232,16 +266,36 @@ export function createAggregator() {
   let tokenizationFamily = 0;
   let tokenizationFallback = 0;
 
-  function updateBucket(kind: BucketKind, key: string, conversationId: string, tokenCount: number): void {
+  function updateBucket(
+    kind: BucketKind,
+    key: string,
+    dayKey: string,
+    conversationId: string,
+    tokenCount: number,
+    role: RoleClass,
+    modelId: string,
+    message: NormalizedMessage
+  ): void {
     let bucket = buckets[kind].get(key);
     if (!bucket) {
-      bucket = { messages: 0, conversations: 0, visibleTokens: 0, conversationIds: new Set() };
+      bucket = createEmptyBucket();
       buckets[kind].set(key, bucket);
     }
     bucket.messages += 1;
     bucket.visibleTokens += tokenCount;
+    bucket[`${role}Tokens`] += tokenCount;
+    bucket.webSearches += message.toolEvents.filter((event) => event.kind === 'web-search').length;
+    bucket.toolEvents += message.toolEvents.length;
     bucket.conversationIds.add(conversationId);
     bucket.conversations = bucket.conversationIds.size;
+    if (role !== 'other') {
+      const day = bucket.usageByDay[dayKey] ?? {};
+      const usage = day[modelId] ?? { inputTokens: 0, outputTokens: 0 };
+      if (role === 'input') usage.inputTokens += tokenCount;
+      else usage.outputTokens += tokenCount;
+      day[modelId] = usage;
+      bucket.usageByDay[dayKey] = day;
+    }
   }
 
   async function acceptConversation(conversation: NormalizedConversation): Promise<void> {
@@ -292,12 +346,12 @@ export function createAggregator() {
       updateRange(summary, message.createdAt);
       tokenHistogram.set(tokenCount, (tokenHistogram.get(tokenCount) ?? 0) + 1);
 
-      const key = explicitModelKey(message) ?? inferredModel ?? 'unknown';
-      modelIds.add(key);
-      let model = modelMetrics.get(key);
+      const modelKey = explicitModelKey(message) ?? inferredModel ?? 'unknown';
+      modelIds.add(modelKey);
+      let model = modelMetrics.get(modelKey);
       if (!model) {
         model = {
-          modelId: key,
+          modelId: modelKey,
           messages: 0,
           visibleTokens: 0,
           inputTokens: 0,
@@ -307,7 +361,7 @@ export function createAggregator() {
           rawAliasSet: new Set(),
           usageByDay: {}
         };
-        modelMetrics.set(key, model);
+        modelMetrics.set(modelKey, model);
       }
       model.messages += 1;
       model.visibleTokens += tokenCount;
@@ -324,12 +378,19 @@ export function createAggregator() {
           inputTokens: 0,
           outputTokens: 0,
           otherTokens: 0,
-          modelIds: []
+          modelIds: [],
+          byModel: {}
         };
         daily.messages += 1;
         daily.visibleTokens += tokenCount;
         daily[`${kind}Tokens`] += tokenCount;
-        if (!daily.modelIds.includes(key)) daily.modelIds.push(key);
+        if (!daily.modelIds.includes(modelKey)) daily.modelIds.push(modelKey);
+        if (kind !== 'other') {
+          const modelUsage = daily.byModel[modelKey] ?? { inputTokens: 0, outputTokens: 0 };
+          if (kind === 'input') modelUsage.inputTokens += tokenCount;
+          else modelUsage.outputTokens += tokenCount;
+          daily.byModel[modelKey] = modelUsage;
+        }
         summary.usageByDay[keys.day] = daily;
       }
 
@@ -342,7 +403,7 @@ export function createAggregator() {
 
       if (keys) {
         (Object.keys(keys) as BucketKind[]).forEach((bucketKind) => {
-          updateBucket(bucketKind, keys[bucketKind], conversation.id, tokenCount);
+          updateBucket(bucketKind, keys[bucketKind], keys.day, conversation.id, tokenCount, kind, modelKey, message);
         });
       }
 
@@ -364,7 +425,17 @@ export function createAggregator() {
       finalizedBuckets[kind] = Object.fromEntries(
         [...buckets[kind].entries()].map(([key, bucket]) => [
           key,
-          { messages: bucket.messages, conversations: bucket.conversations, visibleTokens: bucket.visibleTokens }
+          {
+            messages: bucket.messages,
+            conversations: bucket.conversations,
+            visibleTokens: bucket.visibleTokens,
+            inputTokens: bucket.inputTokens,
+            outputTokens: bucket.outputTokens,
+            otherTokens: bucket.otherTokens,
+            webSearches: bucket.webSearches,
+            toolEvents: bucket.toolEvents,
+            usageByDay: cloneUsageByDay(bucket.usageByDay)
+          }
         ])
       );
     }
@@ -412,7 +483,11 @@ export function createAggregator() {
         ...value,
         modelIds: [...value.modelIds],
         usageByDay: Object.fromEntries(
-          Object.entries(value.usageByDay).map(([day, usage]) => [day, { ...usage, modelIds: [...usage.modelIds] }])
+          Object.entries(value.usageByDay).map(([day, usage]) => [day, {
+            ...usage,
+            modelIds: [...usage.modelIds],
+            byModel: Object.fromEntries(Object.entries(usage.byModel).map(([modelId, tokens]) => [modelId, { ...tokens }]))
+          }])
         )
       }))
     };

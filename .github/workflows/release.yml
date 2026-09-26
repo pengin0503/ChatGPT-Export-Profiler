@@ -20,6 +20,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify release tag matches package version
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$RELEASE_TAG" != "v$PACKAGE_VERSION" ]]; then
+            echo "Release tag $RELEASE_TAG does not match package version v$PACKAGE_VERSION." >&2
+            exit 1
+          fi
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
@@ -27,9 +35,13 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run e2e
-      - name: Generate synthetic performance fixture
-        run: npm run make:fixture:1k
+      - name: Generate synthetic 10k performance fixture
+        run: npm run make:fixture:10k
       - name: Performance regression check
+        env:
+          PERF_FIXTURE: tests/fixtures/generated-10k.zip
+          PERF_CONVERSATIONS: '10000'
+          PERF_IMPORT_TIMEOUT_MS: '240000'
         run: npm run test:performance
       - name: Build offline package
         shell: bash

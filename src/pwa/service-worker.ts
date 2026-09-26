@@ -27,12 +27,23 @@ sw.addEventListener('install', (event) => {
 });
 
 sw.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key))))
-      .then(() => sw.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+        .map((key) => caches.delete(key))
+    );
+
+    const cache = await caches.open(CACHE_NAME);
+    const cachedRequests = await cache.keys();
+    await Promise.all(
+      cachedRequests
+        .filter((request) => !precacheUrlSet.has(request.url) && request.url !== appShellUrl)
+        .map((request) => cache.delete(request))
+    );
+    await sw.clients.claim();
+  })());
 });
 
 sw.addEventListener('fetch', (event) => {

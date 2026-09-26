@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BUILT_IN_PRICING_V1 } from '../../data/pricing.v1';
+import { formatMessage, useI18n } from '../../i18n';
 import { openProfilerDb, type KeyValueRecord } from '../../storage/db';
 
 interface LocalPricingValue extends Record<string, unknown> {
@@ -14,13 +15,14 @@ interface LocalPricingValue extends Record<string, unknown> {
   source: 'local user override';
 }
 
-function nonNegative(value: string): number {
+function nonNegative(value: string, message: string): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) throw new RangeError('Prices must be non-negative.');
+  if (!Number.isFinite(parsed) || parsed < 0) throw new RangeError(message);
   return parsed;
 }
 
 export function PricingEditor() {
+  const { t } = useI18n();
   const [model, setModel] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [input, setInput] = useState('');
@@ -46,15 +48,18 @@ export function PricingEditor() {
   async function save(): Promise<void> {
     try {
       const trimmedModel = model.trim();
-      if (!trimmedModel) throw new Error('Model ID is required.');
-      if (!effectiveFrom || !Number.isFinite(Date.parse(`${effectiveFrom}T00:00:00Z`))) throw new Error('A valid effective date is required.');
+      if (!trimmedModel) throw new Error(t('settings.pricing.modelRequired'));
+      if (!effectiveFrom || !Number.isFinite(Date.parse(`${effectiveFrom}T00:00:00Z`))) {
+        throw new Error(t('settings.pricing.dateRequired'));
+      }
+      const nonNegativeMessage = t('settings.pricing.nonNegative');
       const value: LocalPricingValue = {
         model: trimmedModel,
         effectiveFrom,
         effectiveTo: null,
-        inputPerMillion: nonNegative(input),
-        cachedInputPerMillion: nonNegative(cached),
-        outputPerMillion: nonNegative(output),
+        inputPerMillion: nonNegative(input, nonNegativeMessage),
+        cachedInputPerMillion: nonNegative(cached, nonNegativeMessage),
+        outputPerMillion: nonNegative(output, nonNegativeMessage),
         currency: 'USD',
         datasetVersion: 1,
         source: 'local user override'
@@ -68,32 +73,32 @@ export function PricingEditor() {
         db.close();
       }
       setError(undefined);
-      setStatus('Saved local override.');
+      setStatus(t('settings.pricing.saved'));
     } catch (caught) {
       setStatus(undefined);
-      setError(caught instanceof Error ? caught.message : 'Unable to save local pricing override.');
+      setError(caught instanceof Error ? caught.message : t('settings.pricing.saveFailed'));
     }
   }
 
   return (
     <section className="panel" aria-labelledby="pricing-editor-heading">
-      <h3 id="pricing-editor-heading">Local pricing overrides</h3>
-      <p className="muted-copy">Overrides are stored separately from the {BUILT_IN_PRICING_V1.length} built-in pricing records.</p>
+      <h3 id="pricing-editor-heading">{t('settings.pricing.title')}</h3>
+      <p className="muted-copy">{formatMessage(t('settings.pricing.description'), { count: BUILT_IN_PRICING_V1.length })}</p>
       <div className="form-grid">
-        <label><span>Model ID</span><input aria-label="Model ID" value={model} onChange={(event) => setModel(event.target.value)} /></label>
-        <label><span>Effective from</span><input aria-label="Effective from" type="date" value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} /></label>
-        <label><span>Input per million</span><input aria-label="Input per million" inputMode="decimal" value={input} onChange={(event) => setInput(event.target.value)} /></label>
-        <label><span>Cached input per million</span><input aria-label="Cached input per million" inputMode="decimal" value={cached} onChange={(event) => setCached(event.target.value)} /></label>
-        <label><span>Output per million</span><input aria-label="Output per million" inputMode="decimal" value={output} onChange={(event) => setOutput(event.target.value)} /></label>
+        <label><span>{t('settings.pricing.model')}</span><input aria-label={t('settings.pricing.model')} value={model} onChange={(event) => setModel(event.target.value)} /></label>
+        <label><span>{t('settings.pricing.effectiveFrom')}</span><input aria-label={t('settings.pricing.effectiveFrom')} type="date" value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} /></label>
+        <label><span>{t('settings.pricing.input')}</span><input aria-label={t('settings.pricing.input')} inputMode="decimal" value={input} onChange={(event) => setInput(event.target.value)} /></label>
+        <label><span>{t('settings.pricing.cachedInput')}</span><input aria-label={t('settings.pricing.cachedInput')} inputMode="decimal" value={cached} onChange={(event) => setCached(event.target.value)} /></label>
+        <label><span>{t('settings.pricing.output')}</span><input aria-label={t('settings.pricing.output')} inputMode="decimal" value={output} onChange={(event) => setOutput(event.target.value)} /></label>
       </div>
       {error ? <p className="inline-error" role="alert">{error}</p> : null}
       {status ? <p className="success-note" role="status">{status}</p> : null}
-      <button className="primary-action" type="button" onClick={() => void save()}>Save local override</button>
+      <button className="primary-action" type="button" onClick={() => void save()}>{t('settings.pricing.save')}</button>
       {records.length ? (
-        <ul className="compact-list" aria-label="Local pricing history">
+        <ul className="compact-list" aria-label={t('settings.pricing.historyAria')}>
           {records.map((record) => {
             const value = record.value as Partial<LocalPricingValue>;
-            return <li key={record.key}>{String(value.model ?? 'unknown')} · {String(value.effectiveFrom ?? 'unknown date')}</li>;
+            return <li key={record.key}>{String(value.model ?? t('settings.pricing.unknownModel'))} · {String(value.effectiveFrom ?? t('settings.pricing.unknownDate'))}</li>;
           })}
         </ul>
       ) : null}
