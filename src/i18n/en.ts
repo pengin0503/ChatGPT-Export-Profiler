@@ -13,6 +13,7 @@ export const en = {
   'import.safetyBlocked': 'The ZIP did not pass the local safety inspection.',
   'import.failed': 'The import could not be completed.',
   'import.fingerprintMismatch': 'This ZIP does not match the paused import. Select the original export ZIP to resume.',
+  'import.analysisVersionMismatch': 'This paused analysis was created with an older analyzer or tokenizer. Start a fresh import to avoid mixing incompatible metrics.',
   'import.zipSafetyBlocked': 'The selected ZIP was blocked by the configured local safety limits.',
   'import.streamFailed': 'The export could not be read completely. The ZIP or conversations JSON may be malformed.',
   'import.analysisFailed': 'Local analysis failed while processing the export.',
