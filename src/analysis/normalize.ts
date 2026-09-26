@@ -31,8 +31,6 @@ function extractText(content: unknown, quality: QualityCollector): string {
 
   const contentType = asString(content.content_type);
   if (contentType === 'thoughts' || contentType === 'reasoning_recap') {
-    // These are recognized reasoning containers, not user-visible message body text.
-    // Preserve visible-token accounting by intentionally excluding their payloads.
     return '';
   }
 
@@ -75,60 +73,68 @@ function countAttachments(content: unknown, metadata: Record<string, unknown>): 
 }
 
 const KNOWN_CONVERSATION_KEYS = new Set([
-  'id',
-  'conversation_id',
-  'title',
-  'create_time',
-  'update_time',
-  'mapping',
-  'current_node',
-  'conversation_template_id',
-  'gizmo_id',
-  'is_archived',
-  'is_starred',
-  'safe_urls',
-  'blocked_urls',
-  'default_model_slug',
-  'conversation_origin',
-  'moderation_results',
-  'plugin_ids',
-  'voice',
-  'is_do_not_remember',
-  'is_read_only',
-  'is_study_mode',
-  'memory_scope',
-  'pinned_time'
+  'id', 'conversation_id', 'title', 'create_time', 'update_time', 'mapping', 'current_node',
+  'conversation_template_id', 'gizmo_id', 'is_archived', 'is_starred', 'safe_urls', 'blocked_urls',
+  'default_model_slug', 'conversation_origin', 'moderation_results', 'plugin_ids', 'voice',
+  'is_do_not_remember', 'is_read_only', 'is_study_mode', 'memory_scope', 'pinned_time'
 ]);
 
-const KNOWN_METADATA_KEYS = new Set([
-  'model_slug',
-  'default_model_slug',
-  'tool_name',
-  'tool_type',
-  'tool',
-  'recipient',
-  'invoked_plugin',
-  'attachments',
-  'gizmo_id',
-  'request_id',
-  'message_type',
-  'finish_details',
-  'citations',
-  'content_references',
-  'async_task_title',
-  'branching_from_conversation_title',
-  'code_blocks',
-  'conversation_context_citation_metadata',
-  'error_metadata',
-  'image_results',
-  'is_async_task_result_message',
-  'message_locale',
-  'parent_id',
-  'search_result_groups',
-  'serialization_metadata',
-  'tool_icons',
-  'view_state'
+const KNOWN_NODE_KEYS = new Set(['id', 'message', 'parent', 'children']);
+const KNOWN_MESSAGE_KEYS = new Set([
+  'id', 'author', 'create_time', 'update_time', 'content', 'status', 'end_turn', 'weight',
+  'metadata', 'recipient', 'channel'
 ]);
+const KNOWN_AUTHOR_KEYS = new Set(['role', 'name', 'metadata']);
+const KNOWN_CONTENT_KEYS = new Set([
+  'content_type', 'parts', 'source_analysis_msg_id', 'thoughts', 'content'
+]);
+const KNOWN_PART_KEYS = new Set(['text', 'content_type', 'asset_pointer', 'file_id']);
+
+const KNOWN_METADATA_KEYS = new Set([
+  'model_slug', 'default_model_slug', 'tool_name', 'tool_type', 'tool', 'recipient', 'invoked_plugin',
+  'attachments', 'gizmo_id', 'request_id', 'message_type', 'finish_details', 'citations',
+  'content_references', 'async_task_title', 'branching_from_conversation_title', 'code_blocks',
+  'conversation_context_citation_metadata', 'error_metadata', 'image_results',
+  'is_async_task_result_message', 'message_locale', 'parent_id', 'search_result_groups',
+  'serialization_metadata', 'tool_icons', 'view_state'
+]);
+
+function schemaType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value === 'object' ? 'object' : typeof value;
+}
+
+function reportUnknownStructuralKeys(
+  record: Record<string, unknown>,
+  known: ReadonlySet<string>,
+  prefix: string,
+  quality: QualityCollector
+): void {
+  for (const [key, value] of Object.entries(record)) {
+    if (!known.has(key)) quality.addUnknownSchema(`${prefix}.${key}:${schemaType(value)}`);
+  }
+}
+
+function inspectStructuralSchema(node: Record<string, unknown>, quality: QualityCollector): void {
+  reportUnknownStructuralKeys(node, KNOWN_NODE_KEYS, 'mapping.node', quality);
+  if (!isRecord(node.message)) return;
+  const message = node.message;
+  reportUnknownStructuralKeys(message, KNOWN_MESSAGE_KEYS, 'message', quality);
+  if (isRecord(message.author)) {
+    reportUnknownStructuralKeys(message.author, KNOWN_AUTHOR_KEYS, 'message.author', quality);
+  }
+  if (isRecord(message.content)) {
+    reportUnknownStructuralKeys(message.content, KNOWN_CONTENT_KEYS, 'message.content', quality);
+    if (Array.isArray(message.content.parts)) {
+      for (const part of message.content.parts) {
+        if (isRecord(part)) {
+          reportUnknownStructuralKeys(part, KNOWN_PART_KEYS, 'message.content.parts[]', quality);
+        }
+      }
+    }
+  }
+}
 
 function unknownConversationKeys(raw: Record<string, unknown>, quality: QualityCollector): void {
   for (const key of Object.keys(raw)) {
@@ -186,6 +192,7 @@ export function normalizeConversation(
       quality.addRecoverable('mapping-node-not-object');
       continue;
     }
+    inspectStructuralSchema(nodeValue, quality);
     if (nodeValue.message === null || nodeValue.message === undefined) continue;
     if (!isRecord(nodeValue.message)) {
       quality.addRecoverable('message-not-object');

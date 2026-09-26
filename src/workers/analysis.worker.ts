@@ -12,6 +12,14 @@ interface WorkerScope {
   addEventListener(type: 'message', listener: (event: MessageEvent<PipelineMessage>) => void): void;
 }
 
+interface StoredTokenizationCoverage {
+  attempted: number;
+  identified: number;
+  exact: number;
+  family: number;
+  fallback: number;
+}
+
 const scope = self as unknown as WorkerScope;
 let activeStart: StartImportMessage | undefined;
 let latestCheckpoint: ImportCheckpoint | undefined;
@@ -20,6 +28,9 @@ let work = Promise.resolve();
 let seenConversationIds = new Set<string>();
 let tokenizationAttempted = 0;
 let tokenizationIdentified = 0;
+let tokenizationExact = 0;
+let tokenizationFamily = 0;
+let tokenizationFallback = 0;
 
 function qualityRecord(
   snapshot: QualitySnapshot,
@@ -58,8 +69,12 @@ function toolRecords(message: BatchMessage, conversations: readonly NormalizedCo
   }));
 }
 
-function parseStoredCoverage(value: unknown): { attempted: number; identified: number } {
-  if (typeof value !== 'object' || value === null) return { attempted: 0, identified: 0 };
+function count(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function parseStoredCoverage(value: unknown): StoredTokenizationCoverage {
+  if (typeof value !== 'object' || value === null) return { attempted: 0, identified: 0, exact: 0, family: 0, fallback: 0 };
   const record = value as Record<string, unknown>;
   const coverage = typeof record.coverage === 'object' && record.coverage !== null
     ? record.coverage as Record<string, unknown>
@@ -68,8 +83,22 @@ function parseStoredCoverage(value: unknown): { attempted: number; identified: n
     ? coverage.tokenization as Record<string, unknown>
     : undefined;
   return {
-    attempted: typeof tokenization?.attempted === 'number' ? tokenization.attempted : 0,
-    identified: typeof tokenization?.identified === 'number' ? tokenization.identified : 0
+    attempted: count(tokenization?.attempted),
+    identified: count(tokenization?.identified),
+    exact: count(tokenization?.exact),
+    family: count(tokenization?.family),
+    fallback: count(tokenization?.fallback)
+  };
+}
+
+function cumulativeTokenization() {
+  return {
+    attempted: tokenizationAttempted,
+    identified: tokenizationIdentified,
+    ratio: tokenizationAttempted === 0 ? null : tokenizationIdentified / tokenizationAttempted,
+    exact: tokenizationExact,
+    family: tokenizationFamily,
+    fallback: tokenizationFallback
   };
 }
 
@@ -84,6 +113,9 @@ async function initializePersistedState(analysisId: string): Promise<void> {
     const storedCoverage = parseStoredCoverage(quality?.value);
     tokenizationAttempted = storedCoverage.attempted;
     tokenizationIdentified = storedCoverage.identified;
+    tokenizationExact = storedCoverage.exact;
+    tokenizationFamily = storedCoverage.family;
+    tokenizationFallback = storedCoverage.fallback;
   } finally {
     db.close();
   }
@@ -96,11 +128,9 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
   const result = aggregator.finish();
   tokenizationAttempted += result.tokenizationCoverage.attempted;
   tokenizationIdentified += result.tokenizationCoverage.identified;
-  const cumulativeTokenization = {
-    attempted: tokenizationAttempted,
-    identified: tokenizationIdentified,
-    ratio: tokenizationAttempted === 0 ? null : tokenizationIdentified / tokenizationAttempted
-  };
+  tokenizationExact += result.tokenizationCoverage.exact;
+  tokenizationFamily += result.tokenizationCoverage.family;
+  tokenizationFallback += result.tokenizationCoverage.fallback;
 
   const conversationRecords: ConversationMetricRecord[] = result.conversations.map((conversation) => ({
     analysisId: message.analysisId,
@@ -179,7 +209,7 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
     for (const record of toolRecords(message, unique.accepted)) await tx.objectStore('toolMetrics').put(record);
     await tx.objectStore('dataQuality').put({
       analysisId: message.analysisId,
-      value: qualityRecord(message.quality, cumulativeTokenization)
+      value: qualityRecord(message.quality, cumulativeTokenization())
     });
     await tx.objectStore('checkpoints').put(checkpoint);
     await tx.done;
@@ -214,11 +244,7 @@ async function finalizeAnalysis(analysisId: string, finalQuality?: QualitySnapsh
     if (finalQuality) {
       await db.put('dataQuality', {
         analysisId,
-        value: qualityRecord(finalQuality, {
-          attempted: tokenizationAttempted,
-          identified: tokenizationIdentified,
-          ratio: tokenizationAttempted === 0 ? null : tokenizationIdentified / tokenizationAttempted
-        })
+        value: qualityRecord(finalQuality, cumulativeTokenization())
       });
     }
     const record = await db.get('analyses', analysisId);

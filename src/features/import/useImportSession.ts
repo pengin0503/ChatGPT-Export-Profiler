@@ -212,9 +212,10 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
 
       const fingerprint = await fingerprintImport(file, inspection);
       const analyses = await analysisRepository.list();
-      const existing = newestCompletedAnalysis(analyses, fingerprint.hash);
+      const existing = newestCompletedAnalysis(analyses, fingerprint.hash)
+        ?? (fingerprint.legacyHash ? newestCompletedAnalysis(analyses, fingerprint.legacyHash) : undefined);
       if (existing) {
-        setState({ status: 'duplicate', file, existingAnalysisId: existing.id, fingerprint: fingerprint.hash });
+        setState({ status: 'duplicate', file, existingAnalysisId: existing.id, fingerprint: existing.fingerprint });
         return;
       }
       await startFresh(file);

@@ -1,6 +1,8 @@
 import type { ZipInspection } from '../import/zipInspector';
 
 const SAMPLE_BYTES = 64 * 1024;
+const LEGACY_SAMPLE_COUNT = 3;
+const CONTENT_SAMPLE_COUNT = 8;
 
 interface FingerprintConversationEntry {
   filename: string;
@@ -10,6 +12,8 @@ interface FingerprintConversationEntry {
 
 export interface ImportFingerprint {
   hash: string;
+  /** Previous v1/v2 fingerprint, used only to resume or recognize analyses created before v3. */
+  legacyHash?: string;
   algorithm: 'SHA-256';
   fileSize: number;
   lastModified?: number;
@@ -28,19 +32,21 @@ interface Sample {
   bytes: Uint8Array;
 }
 
-function sampleOffsets(size: number): number[] {
-  if (size <= SAMPLE_BYTES * 3) return [0];
-  const middle = Math.floor((size - SAMPLE_BYTES) / 2);
-  return [0, middle, size - SAMPLE_BYTES];
+function sampleOffsets(size: number, sampleCount: number): number[] {
+  if (size <= SAMPLE_BYTES * sampleCount) return [0];
+  const maxOffset = size - SAMPLE_BYTES;
+  return Array.from({ length: sampleCount }, (_, index) =>
+    Math.floor((maxOffset * index) / Math.max(1, sampleCount - 1))
+  );
 }
 
-async function readSamples(file: Blob): Promise<Sample[]> {
-  if (file.size <= SAMPLE_BYTES * 3) {
+async function readSamples(file: Blob, sampleCount: number): Promise<Sample[]> {
+  if (file.size <= SAMPLE_BYTES * sampleCount) {
     return [{ offset: 0, bytes: new Uint8Array(await file.arrayBuffer()) }];
   }
 
   return Promise.all(
-    sampleOffsets(file.size).map(async (offset) => ({
+    sampleOffsets(file.size, sampleCount).map(async (offset) => ({
       offset,
       bytes: new Uint8Array(await file.slice(offset, offset + SAMPLE_BYTES).arrayBuffer())
     }))
@@ -62,6 +68,12 @@ function toHex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)].map((value) => value.toString(16).padStart(2, '0')).join('');
 }
 
+async function digestMetadataAndSamples(metadata: Record<string, unknown>, samples: Sample[]): Promise<string> {
+  const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata));
+  const digestInput = concatenate([metadataBytes, ...samples.map((sample) => sample.bytes)]);
+  return toHex(await crypto.subtle.digest('SHA-256', digestInput));
+}
+
 function copyConversationEntry(entry: FingerprintConversationEntry): FingerprintConversationEntry {
   return {
     filename: entry.filename,
@@ -72,7 +84,8 @@ function copyConversationEntry(entry: FingerprintConversationEntry): Fingerprint
 
 export async function fingerprintImport(file: Blob, inspection: ZipInspection): Promise<ImportFingerprint> {
   const source = file as BlobWithModified;
-  const samples = await readSamples(file);
+  const samples = await readSamples(file, CONTENT_SAMPLE_COUNT);
+  const legacySamples = await readSamples(file, LEGACY_SAMPLE_COUNT);
   const conversationEntry = inspection.conversationEntry
     ? copyConversationEntry(inspection.conversationEntry)
     : undefined;
@@ -80,16 +93,25 @@ export async function fingerprintImport(file: Blob, inspection: ZipInspection): 
     ? inspection.conversationEntries.map(copyConversationEntry)
     : undefined;
 
-  // Preserve the existing monolithic fingerprint format exactly. Sharded exports
-  // use a new metadata version because there was no legacy single entry to hash.
-  const metadata = conversationEntries
+  const contentMetadata = {
+    version: 3,
+    fileSize: file.size,
+    entryCount: inspection.entryCount,
+    conversationEntry: conversationEntry ?? null,
+    conversationEntries: conversationEntries ?? null,
+    samples: samples.map((sample) => ({ offset: sample.offset, length: sample.bytes.byteLength }))
+  };
+
+  // Reproduce the previous algorithm exactly so paused imports and completed analyses
+  // created before v3 remain recognizable after upgrading.
+  const legacyMetadata = conversationEntries
     ? {
         version: 2,
         fileSize: file.size,
         lastModified: typeof source.lastModified === 'number' ? source.lastModified : null,
         entryCount: inspection.entryCount,
         conversationEntries,
-        samples: samples.map((sample) => ({ offset: sample.offset, length: sample.bytes.byteLength }))
+        samples: legacySamples.map((sample) => ({ offset: sample.offset, length: sample.bytes.byteLength }))
       }
     : {
         version: 1,
@@ -97,15 +119,17 @@ export async function fingerprintImport(file: Blob, inspection: ZipInspection): 
         lastModified: typeof source.lastModified === 'number' ? source.lastModified : null,
         entryCount: inspection.entryCount,
         conversationEntry: conversationEntry ?? null,
-        samples: samples.map((sample) => ({ offset: sample.offset, length: sample.bytes.byteLength }))
+        samples: legacySamples.map((sample) => ({ offset: sample.offset, length: sample.bytes.byteLength }))
       };
 
-  const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata));
-  const digestInput = concatenate([metadataBytes, ...samples.map((sample) => sample.bytes)]);
-  const digest = await crypto.subtle.digest('SHA-256', digestInput);
+  const [hash, legacyHash] = await Promise.all([
+    digestMetadataAndSamples(contentMetadata, samples),
+    digestMetadataAndSamples(legacyMetadata, legacySamples)
+  ]);
 
   return {
-    hash: toHex(digest),
+    hash,
+    legacyHash,
     algorithm: 'SHA-256',
     fileSize: file.size,
     lastModified: typeof source.lastModified === 'number' ? source.lastModified : undefined,

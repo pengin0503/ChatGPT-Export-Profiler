@@ -7,6 +7,13 @@ import {
 } from '../../import/pipelineProtocol';
 import { analysisRepository, type AnalysisRecord, type ImportCheckpoint } from '../../storage/repositories';
 import type { AnalysisStatus } from '../../storage/db';
+import {
+  ANALYSIS_SCHEMA_VERSION,
+  ANALYZER_VERSION,
+  APP_VERSION,
+  PRICING_DATASET_VERSION,
+  TOKENIZER_VERSION
+} from '../../version';
 
 export interface WorkerPort {
   postMessage(message: PipelineMessage): void;
@@ -118,11 +125,11 @@ export class ImportController {
       fingerprint: fingerprint.hash,
       createdAt: Date.now(),
       status: 'running',
-      appVersion: '0.1.0',
-      schemaVersion: 1,
-      analyzerVersion: 1,
-      tokenizerVersion: 1,
-      pricingDatasetVersion: 1
+      appVersion: APP_VERSION,
+      schemaVersion: ANALYSIS_SCHEMA_VERSION,
+      analyzerVersion: ANALYZER_VERSION,
+      tokenizerVersion: TOKENIZER_VERSION,
+      pricingDatasetVersion: PRICING_DATASET_VERSION
     });
     if (generation !== this.startupGeneration) {
       await this.dependencies.updateAnalysisStatus(analysisId, 'cancelled');
@@ -145,7 +152,7 @@ export class ImportController {
 
     const fingerprint = await this.dependencies.fingerprintImport(file, inspection);
     this.assertActiveGeneration(generation);
-    if (fingerprint.hash !== checkpoint.fingerprint) {
+    if (fingerprint.hash !== checkpoint.fingerprint && fingerprint.legacyHash !== checkpoint.fingerprint) {
       throw new ImportPipelineError('FINGERPRINT_MISMATCH', 'inspection', 'import.fingerprintMismatch');
     }
 
@@ -154,7 +161,7 @@ export class ImportController {
     this.beginWorkers(
       file,
       checkpoint.analysisId,
-      fingerprint.hash,
+      checkpoint.fingerprint,
       options.profile ?? 'standard',
       checkpoint,
       checkpoint.modelAliases ?? options.modelAliases,
