@@ -50,7 +50,8 @@ async function jsonBlob(
   options: AnalyticsExportPrivacyOptions
 ): Promise<Blob> {
   const sanitized = sanitizeAnalyticsExport({ ...base, conversations: [] }, options);
-  const { conversations: _conversations, ...header } = sanitized;
+  const header: Omit<AnalyticsExport, 'conversations'> & { conversations?: never } = { ...sanitized };
+  delete (header as Partial<AnalyticsExport>).conversations;
   const serializedHeader = JSON.stringify(header, null, 2);
   const closingIndex = serializedHeader.lastIndexOf('\n}');
   const parts: BlobPart[] = [];
