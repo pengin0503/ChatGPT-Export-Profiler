@@ -1,4 +1,3 @@
-import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { DateRangeFilter } from '../../src/components/DateRangeFilter';
@@ -6,7 +5,26 @@ import { OverviewPage } from '../../src/features/overview/OverviewPage';
 import { ConversationsPage } from '../../src/features/conversations/ConversationsPage';
 import { TimelinePage } from '../../src/features/timeline/TimelinePage';
 import { I18nContext, t as translate } from '../../src/i18n';
-import { PROFILER_DB_NAME } from '../../src/storage/db';
+
+vi.mock('../../src/analysis/pricingHistory', () => ({
+  loadPricingRecords: vi.fn().mockResolvedValue([])
+}));
+
+vi.mock('../../src/storage/analyticsQueries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/storage/analyticsQueries')>();
+  return {
+    ...actual,
+    getOverviewMetrics: vi.fn().mockResolvedValue({
+      totals: { conversations: 0, messages: 0, visibleTokens: 0 },
+      peakDay: null,
+      largestConversation: null
+    }),
+    getTopModelId: vi.fn().mockResolvedValue(undefined),
+    getModelMetrics: vi.fn().mockResolvedValue([]),
+    getTimelineMetrics: vi.fn().mockResolvedValue([]),
+    queryConversationMetrics: vi.fn().mockResolvedValue({ total: 0, rows: [] })
+  };
+});
 
 function renderEnglish(ui: React.ReactNode) {
   return render(
@@ -16,19 +34,8 @@ function renderEnglish(ui: React.ReactNode) {
   );
 }
 
-async function resetDb(): Promise<void> {
+afterEach(() => {
   cleanup();
-  await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(PROFILER_DB_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Database deletion blocked.'));
-  });
-}
-
-afterEach(async () => {
-  vi.restoreAllMocks();
-  await resetDb();
 });
 
 describe('remaining v1 analytics controls', () => {
@@ -44,7 +51,7 @@ describe('remaining v1 analytics controls', () => {
     });
   });
 
-  it('shows the required estimated-processing and visible-cost overview metrics', async () => {
+  it('shows the required estimated-processing and visible-cost overview metrics', () => {
     renderEnglish(<OverviewPage analysisId="synthetic-overview-v1" />);
     expect(screen.getByText('Estimated processing tokens')).toBeVisible();
     expect(screen.getByText('Visible-token API-equivalent cost')).toBeVisible();
