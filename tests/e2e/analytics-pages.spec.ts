@@ -50,3 +50,26 @@ test('navigates bounded analytics pages after local import', async ({ page }) =>
   await page.getByText('Synthetic Alpha').click();
   await expect(page.getByText(/Full conversation text is not persisted/i)).toBeVisible();
 });
+
+test('persists tokenization coverage and applies one duplicate-conversation policy to all analytics', async ({ page }) => {
+  const payload = [
+    conversation('c-duplicate', 'First duplicate', 'gpt-6-sol', 0),
+    conversation('c-duplicate', 'Second duplicate', 'gpt-6-sol', 60)
+  ];
+  const zip = await makeZip([{ name: 'conversations.json', text: JSON.stringify(payload) }]);
+  const buffer = Buffer.from(await zip.arrayBuffer());
+
+  await page.goto('/');
+  await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({ name: 'duplicate.zip', mimeType: 'application/zip', buffer });
+  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('1 conversation', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 messages', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Models' }).click();
+  const modelRow = page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'gpt-6-sol', exact: true }) });
+  await expect(modelRow.getByRole('cell').nth(3)).toHaveText('2');
+  await expect(modelRow.getByRole('cell').nth(4)).toHaveText('1');
+
+  await page.getByRole('button', { name: 'Data Quality' }).click();
+  await expect(page.getByText('Tokenization: 100.0% (2/2)', { exact: true })).toBeVisible();
+});
