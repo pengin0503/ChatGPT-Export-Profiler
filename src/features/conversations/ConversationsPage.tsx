@@ -40,7 +40,7 @@ export function ConversationsPage({ analysisId }: ConversationsPageProps) {
   const [maxTokens, setMaxTokens] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [pricing, setPricing] = useState<PricingRecord[]>([]);
+  const [pricing, setPricing] = useState<PricingRecord[] | null>(null);
   const [selected, setSelected] = useState<ConversationMetricRecord | null>(null);
 
   useEffect(() => {
@@ -54,6 +54,7 @@ export function ConversationsPage({ analysisId }: ConversationsPageProps) {
   const range = useMemo(() => selectedRange(fromDate, toDate), [fromDate, toDate]);
 
   useEffect(() => {
+    if (pricing === null) return;
     let active = true;
     const parsedMin = minTokens.trim() ? Number(minTokens) : undefined;
     const parsedMax = maxTokens.trim() ? Number(maxTokens) : undefined;
