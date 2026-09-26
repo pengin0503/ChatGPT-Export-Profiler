@@ -65,7 +65,14 @@ describe('createAggregator', () => {
     expect(result.totals.outputMessages).toBe(2);
     expect(result.totals.inputTokens + result.totals.outputTokens).toBe(result.totals.visibleTokens);
     expect(result.totals.visibleTokens).toBeGreaterThan(0);
-    expect(result.tokenizationCoverage).toEqual({ attempted: 5, identified: 5, ratio: 1 });
+    expect(result.tokenizationCoverage).toEqual({
+      attempted: 5,
+      identified: 5,
+      ratio: 1,
+      exact: 5,
+      family: 0,
+      fallback: 0
+    });
 
     expect(result.byModel['gpt-6-sol']?.messages).toBe(3);
     expect(result.byModel['gpt-5.6-sol']?.messages).toBe(2);
@@ -97,6 +104,22 @@ describe('createAggregator', () => {
     expect(result.conversations[0]).not.toHaveProperty('text');
   });
 
+  it('reports fallback tokenization separately instead of counting it as identified coverage', async () => {
+    const aggregator = createAggregator();
+    await aggregator.acceptConversation(conversation('fallback', 'Fallback', [
+      message('fallback', 'm1', 'assistant', 'synthetic fallback text', epochSeconds('2026-09-22T09:00:00Z'), 'future-model-x')
+    ]));
+
+    expect(aggregator.finish().tokenizationCoverage).toEqual({
+      attempted: 1,
+      identified: 0,
+      ratio: 0,
+      exact: 0,
+      family: 0,
+      fallback: 1
+    });
+  });
+
   it('returns stable zero/null metrics for an empty export', () => {
     const result = createAggregator().finish();
     expect(result.totals).toEqual({
@@ -112,7 +135,14 @@ describe('createAggregator', () => {
     });
     expect(result.peakDay).toBeNull();
     expect(result.medianMessageTokens).toBe(0);
-    expect(result.tokenizationCoverage).toEqual({ attempted: 0, identified: 0, ratio: null });
+    expect(result.tokenizationCoverage).toEqual({
+      attempted: 0,
+      identified: 0,
+      ratio: null,
+      exact: 0,
+      family: 0,
+      fallback: 0
+    });
     expect(result.conversations).toEqual([]);
   });
 
