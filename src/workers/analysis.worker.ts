@@ -105,11 +105,18 @@ function cumulativeTokenization() {
 async function initializePersistedState(analysisId: string): Promise<void> {
   const db = await openProfilerDb();
   try {
-    const [keys, quality] = await Promise.all([
-      db.getAllKeysFromIndex('conversationMetrics', 'by-analysis', analysisId),
-      db.get('dataQuality', analysisId)
-    ]);
-    seenConversationIds = new Set(keys.map((key) => key[1]));
+    const ids = new Set<string>();
+    const tx = db.transaction('conversationMetrics', 'readonly');
+    let cursor = await tx.store.index('by-analysis').openKeyCursor(analysisId);
+    while (cursor) {
+      const key = cursor.primaryKey;
+      if (Array.isArray(key) && typeof key[1] === 'string') ids.add(key[1]);
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+    seenConversationIds = ids;
+
+    const quality = await db.get('dataQuality', analysisId);
     const storedCoverage = parseStoredCoverage(quality?.value);
     tokenizationAttempted = storedCoverage.attempted;
     tokenizationIdentified = storedCoverage.identified;
@@ -148,7 +155,11 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
     hasFiles: conversation.hasFiles,
     hasTools: conversation.hasTools,
     usageByDay: Object.fromEntries(
-      Object.entries(conversation.usageByDay).map(([day, usage]) => [day, { ...usage, modelIds: [...usage.modelIds] }])
+      Object.entries(conversation.usageByDay).map(([day, usage]) => [day, {
+        ...usage,
+        modelIds: [...usage.modelIds],
+        byModel: Object.fromEntries(Object.entries(usage.byModel).map(([modelId, tokens]) => [modelId, { ...tokens }]))
+      }])
     )
   }));
 
@@ -181,7 +192,16 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
           key,
           messages: bucket.messages,
           conversations: bucket.conversations,
-          visibleTokens: bucket.visibleTokens
+          visibleTokens: bucket.visibleTokens,
+          inputTokens: bucket.inputTokens,
+          outputTokens: bucket.outputTokens,
+          otherTokens: bucket.otherTokens,
+          webSearches: bucket.webSearches,
+          toolEvents: bucket.toolEvents,
+          usageByDay: Object.fromEntries(Object.entries(bucket.usageByDay).map(([day, models]) => [
+            day,
+            Object.fromEntries(Object.entries(models).map(([modelId, tokens]) => [modelId, { ...tokens }]))
+          ]))
         }
       });
     }
