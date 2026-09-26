@@ -53,7 +53,7 @@ async function runImport(message: StartImportMessage): Promise<void> {
   let batchId = message.checkpoint?.committedBatches ?? 0;
 
   async function* normalizedConversations() {
-    for await (const raw of streamConversationObjects(message.file!, signal)) {
+    for await (const raw of streamConversationObjects(message.file!, signal, message.zipSafetyPolicy)) {
       const normalized = normalizeConversation(raw, quality, { modelAliases: message.modelAliases });
       if (!normalized) continue;
       validSeen += 1;

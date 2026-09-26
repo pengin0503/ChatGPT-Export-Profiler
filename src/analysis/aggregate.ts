@@ -30,6 +30,7 @@ export interface ModelMetric {
   rawAliases: string[];
   firstTimestamp?: number;
   lastTimestamp?: number;
+  usageByDay: Record<string, { inputTokens: number; outputTokens: number }>;
 }
 
 export interface ConversationMetric {
@@ -218,7 +219,8 @@ export function createAggregator() {
           outputTokens: 0,
           otherTokens: 0,
           conversationIds: new Set(),
-          rawAliasSet: new Set()
+          rawAliasSet: new Set(),
+          usageByDay: {}
         };
         modelMetrics.set(key, model);
       }
@@ -228,6 +230,13 @@ export function createAggregator() {
       model.conversationIds.add(conversation.id);
       if (message.rawModelSlug) model.rawAliasSet.add(message.rawModelSlug);
       updateRange(model, message.createdAt);
+      if (message.createdAt !== undefined && kind !== 'other') {
+        const day = timeKeys(message.createdAt).day;
+        const usage = model.usageByDay[day] ?? { inputTokens: 0, outputTokens: 0 };
+        if (kind === 'input') usage.inputTokens += tokenCount;
+        else usage.outputTokens += tokenCount;
+        model.usageByDay[day] = usage;
+      }
 
       if (message.createdAt !== undefined) {
         const keys = timeKeys(message.createdAt);
@@ -271,7 +280,8 @@ export function createAggregator() {
           otherTokens: value.otherTokens,
           rawAliases: [...value.rawAliasSet].sort(),
           firstTimestamp: value.firstTimestamp,
-          lastTimestamp: value.lastTimestamp
+          lastTimestamp: value.lastTimestamp,
+          usageByDay: Object.fromEntries(Object.entries(value.usageByDay).map(([day, usage]) => [day, { ...usage }]))
         }
       ])
     );

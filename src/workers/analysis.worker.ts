@@ -84,6 +84,7 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
       outputTokens: model.outputTokens,
       otherTokens: model.otherTokens,
       rawAliases: [...model.rawAliases],
+      usageByDay: Object.fromEntries(Object.entries(model.usageByDay).map(([day, usage]) => [day, { ...usage }])),
       firstTimestamp: model.firstTimestamp,
       lastTimestamp: model.lastTimestamp
     }

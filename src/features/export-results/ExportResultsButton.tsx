@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { calculateHistoricalVisibleCost, type PricingRecord } from '../../analysis/pricing';
+import { loadPricingRecords } from '../../analysis/pricingHistory';
+import { openProfilerDb } from '../../storage/db';
 import { getModelMetrics, getOverviewMetrics, queryConversationMetrics } from '../../storage/analyticsQueries';
 import { exportCsv } from './exportCsv';
-import { exportJson, type AnalyticsExport } from './exportJson';
+import { exportJson, type AnalyticsExport, type AnalyticsExportScenario } from './exportJson';
 import { exportMarkdown } from './exportMarkdown';
 
 interface ExportResultsButtonProps {
@@ -21,12 +24,72 @@ async function allConversationRows(analysisId: string) {
   return rows;
 }
 
+async function getStoredScenario(analysisId: string): Promise<unknown> {
+  const db = await openProfilerDb();
+  try {
+    return (await db.get('costProfiles', `scenario:${analysisId}`))?.value;
+  } finally {
+    db.close();
+  }
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function exportScenario(value: unknown): AnalyticsExportScenario | undefined {
+  const profile = objectValue(value);
+  const request = objectValue(profile?.request);
+  const assumptions = objectValue(request?.assumptions ?? profile?.assumptions);
+  const modelId = request?.replacementModelId;
+  const lower = profile?.lower;
+  const upper = profile?.upper;
+  if (
+    typeof modelId !== 'string' ||
+    typeof lower !== 'number' ||
+    typeof upper !== 'number' ||
+    typeof assumptions?.cacheRatio !== 'number' ||
+    typeof assumptions.hiddenInputOverheadRatio !== 'number' ||
+    typeof assumptions.reasoningOutputOverheadRatio !== 'number'
+  ) return undefined;
+
+  return {
+    lowerUsd: lower,
+    upperUsd: upper,
+    provenance: 'estimated',
+    modelId,
+    assumptions: {
+      cacheRatio: assumptions.cacheRatio,
+      hiddenInputOverheadRatio: assumptions.hiddenInputOverheadRatio,
+      reasoningOutputOverheadRatio: assumptions.reasoningOutputOverheadRatio
+    }
+  };
+}
+
 export async function buildAnalyticsExport(analysisId: string): Promise<AnalyticsExport> {
-  const [overview, models, conversations] = await Promise.all([
+  const [overview, models, conversations, pricing, storedScenario] = await Promise.all([
     getOverviewMetrics(analysisId),
     getModelMetrics(analysisId),
-    allConversationRows(analysisId)
+    allConversationRows(analysisId),
+    loadPricingRecords(),
+    getStoredScenario(analysisId)
   ]);
+  let visibleApiEquivalentUsd = 0;
+  const pricingCoverageGaps: string[] = [];
+  const appliedPricing = new Map<string, PricingRecord>();
+  for (const model of models) {
+    const result = calculateHistoricalVisibleCost(model.modelId, model.usageByDay, pricing);
+    visibleApiEquivalentUsd += result.cost;
+    if (result.missingUsageHistory) pricingCoverageGaps.push(`${model.modelId}: daily usage history unavailable`);
+    if (result.missingDates.length) pricingCoverageGaps.push(`${model.modelId}: no applicable price on ${result.missingDates.join(', ')}`);
+    for (const record of result.appliedPrices) {
+      const key = [record.model, record.effectiveFrom, record.inputPerMillion, record.cachedInputPerMillion, record.outputPerMillion, record.source ?? ''].join('\u0000');
+      appliedPricing.set(key, record);
+    }
+  }
+  const scenario = exportScenario(storedScenario);
 
   return {
     schemaVersion: 1,
@@ -52,7 +115,21 @@ export async function buildAnalyticsExport(analysisId: string): Promise<Analytic
       visibleTokens: conversation.visibleTokens,
       messages: conversation.messages,
       modelIds: [...conversation.modelIds]
-    }))
+    })),
+    cost: {
+      visibleApiEquivalentUsd,
+      visibleProvenance: 'calculated',
+      pricing: [...appliedPricing.values()].map((record) => ({
+        modelId: record.model,
+        effectiveFrom: record.effectiveFrom,
+        inputPerMillion: record.inputPerMillion,
+        cachedInputPerMillion: record.cachedInputPerMillion,
+        outputPerMillion: record.outputPerMillion,
+        ...(record.source ? { source: record.source } : {})
+      })),
+      ...(pricingCoverageGaps.length ? { coverageGaps: pricingCoverageGaps } : {}),
+      ...(scenario ? { scenario } : {})
+    }
   };
 }
 

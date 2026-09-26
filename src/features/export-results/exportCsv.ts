@@ -61,5 +61,18 @@ export function exportCsv(value: AnalyticsExport): string {
     ]));
   }
 
+  for (const price of data.cost?.pricing ?? []) {
+    rows.push(row([
+      'pricing',
+      price.modelId,
+      `${price.inputPerMillion}/${price.cachedInputPerMillion}/${price.outputPerMillion} USD per million`,
+      'observed pricing assumption',
+      `effectiveFrom=${price.effectiveFrom}; source=${price.source ?? 'local override'}`
+    ]));
+  }
+  for (const gap of data.cost?.coverageGaps ?? []) {
+    rows.push(row(['cost', 'pricing coverage gap', '', 'incomplete', gap]));
+  }
+
   return `${rows.join('\r\n')}\r\n`;
 }

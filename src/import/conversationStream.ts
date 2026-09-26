@@ -1,6 +1,6 @@
 import { BlobReader, ZipReader } from '@zip.js/zip.js';
 import { splitTopLevelJsonArray } from './jsonArrayStream';
-import { inspectExportZip, type ZipInspection } from './zipInspector';
+import { inspectExportZip, type ZipInspection, type ZipSafetyPolicy } from './zipInspector';
 
 export class ExportZipSafetyError extends Error {
   readonly code = 'ZIP_SAFETY_BLOCKED' as const;
@@ -17,9 +17,13 @@ function abortError(): Error {
   return error;
 }
 
-export async function* streamConversationObjects(file: Blob, signal: AbortSignal): AsyncGenerator<unknown> {
+export async function* streamConversationObjects(
+  file: Blob,
+  signal: AbortSignal,
+  zipSafetyPolicy?: ZipSafetyPolicy
+): AsyncGenerator<unknown> {
   if (signal.aborted) throw abortError();
-  const inspection = await inspectExportZip(file);
+  const inspection = await inspectExportZip(file, zipSafetyPolicy);
   if (!inspection.ok || !inspection.conversationEntry) throw new ExportZipSafetyError(inspection);
   if (signal.aborted) throw abortError();
 

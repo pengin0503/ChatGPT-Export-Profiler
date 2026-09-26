@@ -51,6 +51,7 @@ export interface StoredModelMetric {
   rawAliases: string[];
   firstTimestamp?: number;
   lastTimestamp?: number;
+  usageByDay: Record<string, { inputTokens: number; outputTokens: number }>;
 }
 
 export type TimelineKind = 'hour' | 'day' | 'week' | 'month' | 'year';
@@ -193,6 +194,7 @@ export async function getModelMetrics(analysisId: string): Promise<StoredModelMe
           outputTokens: 0,
           otherTokens: 0,
           rawAliases: [],
+          usageByDay: {},
           aliases: new Set()
         };
         merged.set(modelId, target);
@@ -205,6 +207,16 @@ export async function getModelMetrics(analysisId: string): Promise<StoredModelMe
       target.otherTokens += number(value.otherTokens);
       if (Array.isArray(value.rawAliases)) {
         for (const alias of value.rawAliases) if (typeof alias === 'string') target.aliases.add(alias);
+      }
+      if (typeof value.usageByDay === 'object' && value.usageByDay !== null && !Array.isArray(value.usageByDay)) {
+        for (const [day, usage] of Object.entries(value.usageByDay)) {
+          if (typeof usage !== 'object' || usage === null || Array.isArray(usage)) continue;
+          const daily = usage as Record<string, unknown>;
+          const existing = target.usageByDay[day] ?? { inputTokens: 0, outputTokens: 0 };
+          existing.inputTokens += number(daily.inputTokens);
+          existing.outputTokens += number(daily.outputTokens);
+          target.usageByDay[day] = existing;
+        }
       }
       const first = optionalNumber(value.firstTimestamp);
       const last = optionalNumber(value.lastTimestamp);

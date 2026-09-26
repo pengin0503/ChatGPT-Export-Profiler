@@ -76,7 +76,55 @@ export function findPrice(
       const to = record.effectiveTo === null ? Number.POSITIVE_INFINITY : endTimestamp(record.effectiveTo);
       return timestamp >= from && timestamp <= to;
     })
-    .sort((a, b) => startTimestamp(b.effectiveFrom) - startTimestamp(a.effectiveFrom))[0];
+    .sort((a, b) => startTimestamp(b.effectiveFrom) - startTimestamp(a.effectiveFrom)
+      || Number(b.source === 'local user override') - Number(a.source === 'local user override'))[0];
+}
+
+export interface HistoricalVisibleCost {
+  cost: number;
+  missingDates: string[];
+  missingUsageHistory: boolean;
+  appliedPrices: PricingRecord[];
+}
+
+export function calculateHistoricalVisibleCost(
+  modelId: CanonicalModelId,
+  usageByDay: Readonly<Record<string, UsageTokens>> | undefined,
+  pricing: readonly PricingRecord[]
+): HistoricalVisibleCost {
+  const days = Object.entries(usageByDay ?? {}).sort(([left], [right]) => left.localeCompare(right));
+  if (days.length === 0) {
+    return { cost: 0, missingDates: [], missingUsageHistory: true, appliedPrices: [] };
+  }
+
+  let cost = 0;
+  const missingDates: string[] = [];
+  const appliedPrices = new Map<string, PricingRecord>();
+  for (const [day, usage] of days) {
+    const timestamp = Date.parse(`${day}T12:00:00.000Z`);
+    const record = findPrice(modelId, timestamp, pricing);
+    if (!record) {
+      missingDates.push(day);
+      continue;
+    }
+    cost += calculateVisibleCost(usage.inputTokens, usage.outputTokens, record);
+    const key = [
+      record.model,
+      record.effectiveFrom,
+      record.effectiveTo ?? '',
+      record.inputPerMillion,
+      record.cachedInputPerMillion,
+      record.outputPerMillion,
+      record.source ?? ''
+    ].join('\u0000');
+    appliedPrices.set(key, record);
+  }
+  return {
+    cost,
+    missingDates,
+    missingUsageHistory: false,
+    appliedPrices: [...appliedPrices.values()]
+  };
 }
 
 export function calculateVisibleCost(

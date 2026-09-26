@@ -47,10 +47,26 @@ export function exportMarkdown(value: AnalyticsExport): string {
     if (data.cost.scenario) {
       const scenario = data.cost.scenario;
       lines.push(
-        `- Scenario: $${scenario.lowerUsd}–$${scenario.upperUsd} (${scenario.provenance})`,
+        `- Scenario: ${scenario.lowerUsd}–${scenario.upperUsd} (${scenario.provenance})`,
         `- Model: ${markdownCell(scenario.modelId)}`,
         `- Assumptions: cacheRatio: ${scenario.assumptions.cacheRatio}; hiddenInputOverheadRatio: ${scenario.assumptions.hiddenInputOverheadRatio}; reasoningOutputOverheadRatio: ${scenario.assumptions.reasoningOutputOverheadRatio}`
       );
+    }
+    if (data.cost.pricing?.length) {
+      lines.push(
+        '',
+        '### Pricing used (USD per million tokens)',
+        '',
+        '| Model | Effective from | Input | Cached input | Output | Source |',
+        '| --- | --- | ---: | ---: | ---: | --- |'
+      );
+      for (const price of data.cost.pricing) {
+        lines.push(`| ${markdownCell(price.modelId)} | ${markdownCell(price.effectiveFrom)} | ${price.inputPerMillion} | ${price.cachedInputPerMillion} | ${price.outputPerMillion} | ${markdownCell(price.source)} |`);
+      }
+    }
+    if (data.cost.coverageGaps?.length) {
+      lines.push('', '### Pricing coverage gaps', '');
+      for (const gap of data.cost.coverageGaps) lines.push(`- ${markdownCell(gap)}`);
     }
   }
 

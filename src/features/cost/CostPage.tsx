@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { calculateScenarioCost, calculateVisibleCost, findPrice, type PricingRecord } from '../../analysis/pricing';
+import { calculateHistoricalVisibleCost, calculateScenarioCost, type PricingRecord } from '../../analysis/pricing';
 import { MetricBadge } from '../../components/MetricBadge';
 import { BUILT_IN_PRICING_V1 } from '../../data/pricing.v1';
 import { openProfilerDb } from '../../storage/db';
 import { getModelMetrics, type StoredModelMetric } from '../../storage/analyticsQueries';
 import { CostScenarioEditor, type CostScenarioRequest } from './CostScenarioEditor';
+import { loadPricingRecords } from '../../analysis/pricingHistory';
 
 interface CostPageProps {
   analysisId: string;
@@ -20,31 +21,6 @@ function milliseconds(timestamp: number): number {
   return timestamp < 100_000_000_000 ? timestamp * 1000 : timestamp;
 }
 
-function isPricingRecord(value: unknown): value is PricingRecord {
-  if (typeof value !== 'object' || value === null) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.model === 'string' &&
-    typeof record.effectiveFrom === 'string' &&
-    (record.effectiveTo === null || typeof record.effectiveTo === 'string') &&
-    typeof record.inputPerMillion === 'number' &&
-    typeof record.cachedInputPerMillion === 'number' &&
-    typeof record.outputPerMillion === 'number'
-  );
-}
-
-async function loadPricing(): Promise<PricingRecord[]> {
-  const db = await openProfilerDb();
-  try {
-    const overrides = (await db.getAll('pricingHistory'))
-      .map((record) => record.value)
-      .filter(isPricingRecord)
-      .map((record) => ({ ...record, currency: 'USD' as const, datasetVersion: record.datasetVersion ?? 1 }));
-    return [...BUILT_IN_PRICING_V1, ...overrides];
-  } finally {
-    db.close();
-  }
-}
 
 function latestPrice(modelId: string, pricing: readonly PricingRecord[]): PricingRecord | undefined {
   return pricing
@@ -65,7 +41,7 @@ export function CostPage({ analysisId }: CostPageProps) {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([getModelMetrics(analysisId), loadPricing()])
+    void Promise.all([getModelMetrics(analysisId), loadPricingRecords()])
       .then(([modelRows, pricingRows]) => {
         if (!active) return;
         setModels(modelRows);
@@ -82,17 +58,18 @@ export function CostPage({ analysisId }: CostPageProps) {
 
   const visible = useMemo(() => {
     let cost = 0;
-    const gaps: string[] = [];
+    const coverageGaps: string[] = [];
     for (const model of models) {
-      const timestamp = model.firstTimestamp ?? model.lastTimestamp;
-      const price = timestamp === undefined ? undefined : findPrice(model.modelId, milliseconds(timestamp), pricing);
-      if (!price) {
-        gaps.push(model.modelId);
-        continue;
+      const result = calculateHistoricalVisibleCost(model.modelId, model.usageByDay, pricing);
+      cost += result.cost;
+      if (result.missingUsageHistory) {
+        coverageGaps.push(`${model.modelId}: date-level usage history unavailable; reimport this analysis`);
       }
-      cost += calculateVisibleCost(model.inputTokens, model.outputTokens, price);
+      if (result.missingDates.length) {
+        coverageGaps.push(`${model.modelId}: no applicable price on ${result.missingDates.join(', ')}`);
+      }
     }
-    return { cost, gaps };
+    return { cost, coverageGaps };
   }, [models, pricing]);
 
   const modelIds = useMemo(() => [...new Set(pricing.map((record) => record.model))].sort(), [pricing]);
@@ -135,7 +112,7 @@ export function CostPage({ analysisId }: CostPageProps) {
               label="Visible-token API-equivalent cost"
               value={money(visible.cost)}
               provenance="calculated"
-              detail={visible.gaps.length ? `No applicable historical price for ${visible.gaps.join(', ')}.` : 'All observed model/date pairs have pricing coverage.'}
+              detail={visible.coverageGaps.length ? 'One or more model/date ranges need attention.' : 'All observed model/date pairs have pricing coverage.'}
             />
             {scenario ? (
               <MetricBadge
@@ -146,7 +123,7 @@ export function CostPage({ analysisId }: CostPageProps) {
               />
             ) : null}
           </div>
-          {visible.gaps.length ? <p className="quality-note">Coverage gap: unsupported historical price period for {visible.gaps.join(', ')}.</p> : null}
+          {visible.coverageGaps.length ? <p className="quality-note">Coverage gap: {visible.coverageGaps.join('; ')}.</p> : null}
           <CostScenarioEditor modelIds={modelIds} onCalculate={calculate} />
         </>
       )}

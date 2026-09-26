@@ -2,6 +2,7 @@ import type { NormalizedConversation } from '../analysis/domain';
 import type { QualitySnapshot } from '../analysis/quality';
 import type { ImportCheckpoint } from '../storage/repositories';
 import type { ImportStage } from '../storage/db';
+import type { ZipSafetyPolicy } from './zipInspector';
 
 export type PerformanceProfileName = 'safe' | 'standard' | 'fast';
 
@@ -24,6 +25,7 @@ export interface StartImportMessage {
   file?: Blob;
   checkpoint?: ImportCheckpoint;
   modelAliases?: Record<string, string>;
+  zipSafetyPolicy?: ZipSafetyPolicy;
 }
 
 export interface BatchMessage {

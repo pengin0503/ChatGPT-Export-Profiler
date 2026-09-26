@@ -28,6 +28,7 @@ describe('offline package release version', () => {
       await writeFile(join(root, 'package.json'), JSON.stringify({ version: '0.1.0' }));
       await writeFile(join(root, 'dist', 'index.html'), '<html>synthetic</html>');
       await copyFile(join(repositoryRoot, 'scripts/make-offline-package.mjs'), join(root, 'scripts/make-offline-package.mjs'));
+      await copyFile(join(repositoryRoot, 'scripts/offline-package-version.mjs'), join(root, 'scripts/offline-package-version.mjs'));
       await copyFile(join(repositoryRoot, 'scripts/serve-offline.mjs'), join(root, 'scripts/serve-offline.mjs'));
       await symlink(join(repositoryRoot, 'node_modules'), join(root, 'node_modules'), 'junction');
 

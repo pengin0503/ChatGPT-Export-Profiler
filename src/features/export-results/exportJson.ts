@@ -29,6 +29,15 @@ export interface AnalyticsExportScenario {
   };
 }
 
+export interface AnalyticsExportPricing {
+  modelId: string;
+  effectiveFrom: string;
+  inputPerMillion: number;
+  cachedInputPerMillion: number;
+  outputPerMillion: number;
+  source?: string;
+}
+
 export interface AnalyticsExport {
   schemaVersion: 1;
   generatedAt: string;
@@ -45,6 +54,8 @@ export interface AnalyticsExport {
     visibleApiEquivalentUsd?: number;
     visibleProvenance?: 'calculated';
     scenario?: AnalyticsExportScenario;
+    pricing?: AnalyticsExportPricing[];
+    coverageGaps?: string[];
   };
 }
 
@@ -80,6 +91,17 @@ export function sanitizeAnalyticsExport(value: AnalyticsExport): AnalyticsExport
           ? { visibleApiEquivalentUsd: value.cost.visibleApiEquivalentUsd }
           : {}),
         ...(value.cost.visibleProvenance ? { visibleProvenance: value.cost.visibleProvenance } : {}),
+        ...(value.cost.pricing ? {
+          pricing: value.cost.pricing.map((record) => ({
+            modelId: record.modelId,
+            effectiveFrom: record.effectiveFrom,
+            inputPerMillion: record.inputPerMillion,
+            cachedInputPerMillion: record.cachedInputPerMillion,
+            outputPerMillion: record.outputPerMillion,
+            ...(record.source ? { source: record.source } : {})
+          }))
+        } : {}),
+        ...(value.cost.coverageGaps ? { coverageGaps: [...value.cost.coverageGaps] } : {}),
         ...(value.cost.scenario ? {
           scenario: {
             lowerUsd: value.cost.scenario.lowerUsd,

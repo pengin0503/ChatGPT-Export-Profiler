@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BlobWriter, TextReader, Uint8ArrayReader, ZipWriter } from '@zip.js/zip.js';
+import { offlinePackageVersion } from './offline-package-version.mjs';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, '..');
@@ -22,7 +23,7 @@ async function collectFiles(directory) {
 }
 
 const packageJson = JSON.parse(await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'));
-const version = String(packageJson.version ?? '0.0.0');
+const version = offlinePackageVersion(String(packageJson.version ?? '0.0.0'), process.env.GITHUB_REF_NAME);
 const outputPath = resolve(artifactsRoot, `ChatGPT-Export-Profiler-${version}-offline.zip`);
 const distFiles = await collectFiles(distRoot);
 

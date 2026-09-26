@@ -104,7 +104,7 @@ export class ImportController {
     });
 
     this.latestCheckpoint = undefined;
-    this.beginWorkers(file, analysisId, fingerprint.hash, options.profile, undefined, options.modelAliases);
+    this.beginWorkers(file, analysisId, fingerprint.hash, options.profile, undefined, options.modelAliases, options.zipSafetyPolicy);
     return { analysisId, fingerprint };
   }
 
@@ -126,7 +126,8 @@ export class ImportController {
       fingerprint.hash,
       options.profile ?? 'standard',
       checkpoint,
-      options.modelAliases
+      options.modelAliases,
+      options.zipSafetyPolicy
     );
     return { analysisId: checkpoint.analysisId, fingerprint };
   }
@@ -143,7 +144,8 @@ export class ImportController {
     fingerprint: string,
     profile: PerformanceProfileName,
     checkpoint?: ImportCheckpoint,
-    modelAliases?: Record<string, string>
+    modelAliases?: Record<string, string>,
+    zipSafetyPolicy?: ZipSafetyPolicy
   ): void {
     this.shutdownWorkers();
     const importWorker = this.dependencies.createImportWorker();
@@ -156,7 +158,7 @@ export class ImportController {
     importWorker.addEventListener('message', this.importListener);
     analysisWorker.addEventListener('message', this.analysisListener);
 
-    const common = { type: 'START_IMPORT' as const, analysisId, fingerprint, profile, checkpoint, modelAliases };
+    const common = { type: 'START_IMPORT' as const, analysisId, fingerprint, profile, checkpoint, modelAliases, zipSafetyPolicy };
     analysisWorker.postMessage(common);
     importWorker.postMessage({ ...common, file });
   }
