@@ -14,6 +14,12 @@ import {
   loadModelAliases,
   loadZipSafetyPolicy
 } from '../settings/preferences';
+import {
+  canSurfaceRecoveredCheckpoint,
+  isAbortError,
+  isRetryableResumeSelectionError,
+  newestCompletedAnalysis
+} from './importSessionLogic';
 
 export interface ImportSummary {
   conversations: number;
@@ -124,7 +130,11 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
       const latest = checkpoints
         .filter((checkpoint): checkpoint is ImportCheckpoint => checkpoint !== undefined)
         .sort((a, b) => b.updatedAt - a.updatedAt)[0];
-      if (active && latest) setState({ status: 'recoverable', checkpoint: latest });
+      if (active && latest) {
+        setState((current) => canSurfaceRecoveredCheckpoint(current.status)
+          ? { status: 'recoverable', checkpoint: latest }
+          : current);
+      }
     }).catch(() => undefined);
     return () => { active = false; };
   }, [enabled]);
@@ -147,6 +157,11 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
       ]);
       await controller.resume(file, checkpoint, { profile, zipSafetyPolicy, modelAliases });
     } catch (error) {
+      if (isAbortError(error)) return;
+      if (isRetryableResumeSelectionError(error)) {
+        setState({ status: 'recoverable', checkpoint });
+        return;
+      }
       setState(failureState(error));
     }
   }, [controller]);
@@ -170,6 +185,7 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
       ]);
       await controller.start(file, { profile, analysisId, zipSafetyPolicy, modelAliases });
     } catch (error) {
+      if (isAbortError(error)) return;
       setState(failureState(error));
     }
   }, [controller]);
@@ -195,13 +211,14 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
 
       const fingerprint = await fingerprintImport(file, inspection);
       const analyses = await analysisRepository.list();
-      const existing = analyses.find((analysis) => analysis.status === 'complete' && analysis.fingerprint === fingerprint.hash);
+      const existing = newestCompletedAnalysis(analyses, fingerprint.hash);
       if (existing) {
         setState({ status: 'duplicate', file, existingAnalysisId: existing.id, fingerprint: fingerprint.hash });
         return;
       }
       await startFresh(file);
     } catch (error) {
+      if (isAbortError(error)) return;
       setState(failureState(error));
     }
   }, [resumeFromCheckpoint, startFresh, state]);
