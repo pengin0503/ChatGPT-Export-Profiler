@@ -11,11 +11,13 @@ function message(
   role: 'user' | 'assistant',
   text: string,
   createdAt: number,
-  canonicalModelId: string
+  canonicalModelId?: string,
+  parentId?: string
 ): NormalizedMessage {
   return {
     conversationId,
     messageId,
+    parentId,
     role,
     text,
     createdAt,
@@ -74,7 +76,6 @@ describe('createAggregator', () => {
     expect(dailyUsage?.['2026-09-20']?.inputTokens).toBeGreaterThan(0);
     expect(dailyUsage?.['2026-09-20']?.outputTokens).toBeGreaterThan(0);
 
-
     expect(result.peakDay?.key).toBe('2026-09-20');
     expect(result.peakDay?.messages).toBe(4);
     expect(result.buckets.hour['2026-09-20T10']?.messages).toBe(2);
@@ -111,5 +112,33 @@ describe('createAggregator', () => {
     expect(result.peakDay).toBeNull();
     expect(result.medianMessageTokens).toBe(0);
     expect(result.conversations).toEqual([]);
+  });
+
+  it('ignores out-of-range timestamps for ranges and timeline buckets instead of aborting the import', async () => {
+    const invalid = message('invalid-time', 'm-invalid', 'assistant', 'synthetic', 1e100, 'gpt-6-sol');
+    const aggregator = createAggregator();
+
+    await expect(aggregator.acceptConversation(conversation('invalid-time', 'Invalid time', [invalid]))).resolves.toBeUndefined();
+    const result = aggregator.finish();
+
+    expect(result.totals.messages).toBe(1);
+    expect(result.conversations[0]?.firstTimestamp).toBeUndefined();
+    expect(result.conversations[0]?.lastTimestamp).toBeUndefined();
+    expect(result.buckets.day).toEqual({});
+  });
+
+  it('attributes a model-less user input to the assistant model for the same turn', async () => {
+    const prompt = message('turn-model', 'user-1', 'user', 'prompt tokens', epochSeconds('2026-09-22T10:00:00Z'));
+    const response = message('turn-model', 'assistant-1', 'assistant', 'response tokens', epochSeconds('2026-09-22T10:00:05Z'), 'gpt-6-sol', 'user-1');
+    const aggregator = createAggregator();
+
+    await aggregator.acceptConversation(conversation('turn-model', 'Turn attribution', [prompt, response]));
+    const result = aggregator.finish();
+
+    expect(result.byModel.unknown).toBeUndefined();
+    expect(result.byModel['gpt-6-sol']?.messages).toBe(2);
+    expect(result.byModel['gpt-6-sol']?.inputTokens).toBeGreaterThan(0);
+    expect(result.byModel['gpt-6-sol']?.outputTokens).toBeGreaterThan(0);
+    expect(result.conversations[0]?.modelIds).toEqual(['gpt-6-sol']);
   });
 });

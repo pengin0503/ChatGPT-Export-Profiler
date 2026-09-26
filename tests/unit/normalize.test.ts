@@ -14,6 +14,7 @@ describe('normalizeConversation', () => {
     expect(conversation.messages[1].parentId).toBe('msg-user');
     expect(conversation.messages[1].canonicalModelId).toBe('gpt-6-sol');
     expect(conversation.messages[1].toolEvents).toContainEqual({ kind: 'web-search', rawType: 'web_search' });
+    expect(quality.snapshot().coverage.modelIdentification).toEqual({ attempted: 2, identified: 1, ratio: 0.5 });
   });
 
   it('applies a local model alias override during normalization', () => {
@@ -52,5 +53,30 @@ describe('normalizeConversation', () => {
     expect(conversation.messages).toHaveLength(1);
     expect(conversation.messages[0].messageId).toBe('msg-b');
     expect(quality.snapshot().recoverable).toBeGreaterThan(0);
+  });
+
+  it('reports unsupported message content instead of silently treating it as complete empty text', () => {
+    const quality = new QualityCollector();
+    const raw = structuredClone(minimal) as unknown as Record<string, unknown>;
+    const mapping = raw.mapping as Record<string, Record<string, unknown>>;
+    const userNode = mapping['user-node'];
+    const userMessage = userNode.message as Record<string, unknown>;
+    userMessage.content = { content_type: 'future_content', payload: { text: 'not represented by parts' } };
+
+    const conversation = normalizeConversation(raw, quality)!;
+    expect(conversation.messages[0].text).toBe('');
+    expect(quality.snapshot().recoverable).toBeGreaterThan(0);
+    expect(quality.snapshot().issues.some((issue) => issue.code === 'message-unsupported-content')).toBe(true);
+  });
+
+  it('records unknown conversation-level fields as schema drift', () => {
+    const quality = new QualityCollector();
+    const raw = structuredClone(minimal) as unknown as Record<string, unknown>;
+    raw.synthetic_unknown_conversation_field = ['fixture-only'];
+
+    normalizeConversation(raw, quality);
+    const snapshot = quality.snapshot();
+    expect(snapshot.unknownSchema).toBeGreaterThan(0);
+    expect(snapshot.unknownSchemaKeys).toContain('synthetic_unknown_conversation_field');
   });
 });

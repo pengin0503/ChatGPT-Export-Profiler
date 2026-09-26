@@ -33,4 +33,28 @@ describe('QualityCollector', () => {
     expect(coverage.modelIdentification.ratio).toBeNull();
     expect(coverage.tokenization.ratio).toBeNull();
   });
+
+  it('keeps occurrence counters exact while deduplicating repeated issue details', () => {
+    const quality = new QualityCollector();
+    for (let index = 0; index < 1_000; index += 1) quality.addUnknownSchema('repeated_future_key');
+
+    const snapshot = quality.snapshot();
+    expect(snapshot.unknownSchema).toBe(1_000);
+    expect(snapshot.unknownSchemaKeys).toEqual(['repeated_future_key']);
+    expect(snapshot.issues.filter((issue) => issue.code === 'repeated_future_key')).toHaveLength(1);
+  });
+
+  it('bounds distinct issue and unknown-key detail arrays', () => {
+    const quality = new QualityCollector();
+    for (let index = 0; index < 500; index += 1) {
+      quality.addWarning(`warning-${index}`);
+      quality.addUnknownSchema(`future-key-${index}`);
+    }
+
+    const snapshot = quality.snapshot();
+    expect(snapshot.warning).toBe(500);
+    expect(snapshot.unknownSchema).toBe(500);
+    expect(snapshot.issues.length).toBeLessThanOrEqual(200);
+    expect(snapshot.unknownSchemaKeys.length).toBeLessThanOrEqual(200);
+  });
 });
