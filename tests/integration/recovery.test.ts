@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ImportController, type WorkerPort } from '../../src/features/import/importController';
 import type { ImportCheckpoint } from '../../src/storage/repositories';
 import type { ImportFingerprint } from '../../src/analysis/fingerprint';
@@ -63,6 +63,8 @@ function checkpoint(overrides: Partial<ImportCheckpoint> = {}): ImportCheckpoint
   };
 }
 
+const noStatusUpdate = async () => undefined;
+
 describe('ImportController recovery', () => {
   it('refuses a checkpoint when the reselected file fingerprint differs', async () => {
     const controller = new ImportController({
@@ -74,7 +76,8 @@ describe('ImportController recovery', () => {
       createAnalysisWorker: () => {
         throw new Error('workers must not start after a fingerprint mismatch');
       },
-      createAnalysis: async () => undefined
+      createAnalysis: async () => undefined,
+      updateAnalysisStatus: noStatusUpdate
     });
 
     await expect(controller.resume(new Blob(['synthetic']), checkpoint())).rejects.toMatchObject({
@@ -90,7 +93,8 @@ describe('ImportController recovery', () => {
       fingerprintImport: async () => fingerprint('expected-fingerprint'),
       createImportWorker: () => importWorker,
       createAnalysisWorker: () => analysisWorker,
-      createAnalysis: async () => undefined
+      createAnalysis: async () => undefined,
+      updateAnalysisStatus: noStatusUpdate
     });
 
     await controller.start(new Blob(['synthetic']), { profile: 'safe', analysisId: 'analysis-1' });
@@ -114,7 +118,8 @@ describe('ImportController recovery', () => {
       fingerprintImport: async () => fingerprint('expected-fingerprint'),
       createImportWorker: () => importWorker,
       createAnalysisWorker: () => analysisWorker,
-      createAnalysis: async () => undefined
+      createAnalysis: async () => undefined,
+      updateAnalysisStatus: noStatusUpdate
     });
     const events: PipelineMessage[] = [];
     controller.subscribe((event) => events.push(event));
@@ -130,8 +135,10 @@ describe('ImportController recovery', () => {
     });
 
     expect(controller.getLatestCheckpoint()).toEqual(durable);
-    expect(events).toContainEqual(expect.objectContaining({ type: 'FAIL', code: 'STORAGE_QUOTA_EXCEEDED' }));
-    expect(importWorker.terminated).toBe(true);
-    expect(analysisWorker.terminated).toBe(true);
+    await vi.waitFor(() => {
+      expect(events).toContainEqual(expect.objectContaining({ type: 'FAIL', code: 'STORAGE_QUOTA_EXCEEDED' }));
+      expect(importWorker.terminated).toBe(true);
+      expect(analysisWorker.terminated).toBe(true);
+    });
   });
 });
