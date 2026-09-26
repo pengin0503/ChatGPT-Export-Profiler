@@ -27,9 +27,13 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run e2e
-      - name: Generate synthetic performance fixture
-        run: npm run make:fixture:1k
+      - name: Generate synthetic 10k performance fixture
+        run: npm run make:fixture:10k
       - name: Performance regression check
+        env:
+          PERF_FIXTURE: tests/fixtures/generated-10k.zip
+          PERF_CONVERSATIONS: '10000'
+          PERF_IMPORT_TIMEOUT_MS: '240000'
         run: npm run test:performance
       - name: Build offline package
         shell: bash
