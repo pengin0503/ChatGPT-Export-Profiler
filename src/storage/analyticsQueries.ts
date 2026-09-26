@@ -63,6 +63,13 @@ export interface StoredTimelineMetric {
   visibleTokens: number;
 }
 
+type IndexedConversationSort =
+  | 'visibleTokens-desc'
+  | 'visibleTokens-asc'
+  | 'inputTokens-desc'
+  | 'outputTokens-desc'
+  | 'messages-desc';
+
 function toSeconds(timestamp: number): number {
   return timestamp < 100_000_000_000 ? timestamp : timestamp / 1000;
 }
@@ -197,6 +204,72 @@ function retainBoundedSorted(
   if (rows.length > maximum) rows.pop();
 }
 
+function indexedSort(sort: ConversationSort): IndexedConversationSort | undefined {
+  if (
+    sort === 'visibleTokens-desc' ||
+    sort === 'visibleTokens-asc' ||
+    sort === 'inputTokens-desc' ||
+    sort === 'outputTokens-desc' ||
+    sort === 'messages-desc'
+  ) return sort;
+  return undefined;
+}
+
+function hasPostIndexFilters(options: ConversationQueryOptions): boolean {
+  return Boolean(
+    options.range ||
+    options.modelId ||
+    options.minTokens !== undefined ||
+    options.maxTokens !== undefined ||
+    options.hasWeb !== undefined ||
+    options.hasFiles !== undefined ||
+    options.hasTools !== undefined
+  );
+}
+
+async function queryIndexedConversationPage(
+  analysisId: string,
+  options: ConversationQueryOptions,
+  sort: IndexedConversationSort
+): Promise<ConversationQueryResult> {
+  const offset = Math.max(0, options.offset ?? 0);
+  const limit = Math.max(0, options.limit ?? 100);
+  const indexConfig = {
+    'visibleTokens-desc': ['by-analysis-visible-tokens', 'prev'],
+    'visibleTokens-asc': ['by-analysis-visible-tokens', 'next'],
+    'inputTokens-desc': ['by-analysis-input-tokens', 'prev'],
+    'outputTokens-desc': ['by-analysis-output-tokens', 'prev'],
+    'messages-desc': ['by-analysis-messages', 'prev']
+  } as const;
+  const [indexName, direction] = indexConfig[sort];
+  const db = await openProfilerDb();
+  try {
+    const tx = db.transaction('conversationMetrics', 'readonly');
+    const index = tx.store.index(indexName);
+    const range = IDBKeyRange.bound(
+      [analysisId, -Number.MAX_VALUE],
+      [analysisId, Number.MAX_VALUE]
+    );
+    const total = await index.count(range);
+    if (limit === 0 || offset >= total) {
+      await tx.done;
+      return { total, rows: [] };
+    }
+
+    let cursor = await index.openCursor(range, direction);
+    if (cursor && offset > 0) cursor = await cursor.advance(offset);
+    const rows: ConversationMetricRecord[] = [];
+    while (cursor && rows.length < limit) {
+      rows.push(cursor.value);
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+    return { total, rows };
+  } finally {
+    db.close();
+  }
+}
+
 async function listConversationRows(analysisId: string): Promise<ConversationMetricRecord[]> {
   const db = await openProfilerDb();
   try {
@@ -240,6 +313,11 @@ export async function queryConversationMetrics(
   analysisId: string,
   options: ConversationQueryOptions = {}
 ): Promise<ConversationQueryResult> {
+  const sort = options.sort ?? 'newest';
+  const indexed = indexedSort(sort);
+  if (indexed && !hasPostIndexFilters(options)) {
+    return queryIndexedConversationPage(analysisId, options, indexed);
+  }
   return scanConversationPage(analysisId, options);
 }
 
