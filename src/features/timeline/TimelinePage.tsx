@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useI18n } from '../../i18n';
 import { getTimelineMetrics, type StoredTimelineMetric, type TimelineKind } from '../../storage/analyticsQueries';
 
 interface TimelinePageProps { analysisId: string }
@@ -11,6 +12,7 @@ function heatmapKey(hourKey: string): string | undefined {
 }
 
 export function TimelinePage({ analysisId }: TimelinePageProps) {
+  const { t } = useI18n();
   const [kind, setKind] = useState<TimelineKind>('day');
   const [measure, setMeasure] = useState<TimelineMeasure>('visibleTokens');
   const [points, setPoints] = useState<StoredTimelineMetric[]>([]);
@@ -35,22 +37,42 @@ export function TimelinePage({ analysisId }: TimelinePageProps) {
     return [...values.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
   }, [hours]);
 
+  const bucketLabels: Record<TimelineKind, string> = {
+    hour: t('timeline.hour'),
+    day: t('timeline.day'),
+    week: t('timeline.week'),
+    month: t('timeline.month'),
+    year: t('timeline.year')
+  };
+
   return (
     <section className="analytics-page" aria-labelledby="timeline-heading">
       <div className="section-heading-row">
-        <div><p className="eyebrow">PREAGGREGATED ACTIVITY</p><h2 id="timeline-heading">Timeline</h2></div>
+        <div><p className="eyebrow">{t('timeline.eyebrow')}</p><h2 id="timeline-heading">{t('nav.timeline')}</h2></div>
         <div className="filter-row">
-          <label className="filter-control"><span>Bucket</span><select aria-label="Timeline bucket" value={kind} onChange={(event) => setKind(event.target.value as TimelineKind)}>{['hour','day','week','month','year'].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-          <label className="filter-control"><span>Metric</span><select aria-label="Timeline metric" value={measure} onChange={(event) => setMeasure(event.target.value as TimelineMeasure)}><option value="visibleTokens">Tokens</option><option value="messages">Messages</option><option value="conversations">Conversations</option></select></label>
+          <label className="filter-control">
+            <span>{t('timeline.bucket')}</span>
+            <select aria-label={t('timeline.bucketAria')} value={kind} onChange={(event) => setKind(event.target.value as TimelineKind)}>
+              {(['hour', 'day', 'week', 'month', 'year'] as TimelineKind[]).map((value) => <option key={value} value={value}>{bucketLabels[value]}</option>)}
+            </select>
+          </label>
+          <label className="filter-control">
+            <span>{t('timeline.metric')}</span>
+            <select aria-label={t('timeline.metricAria')} value={measure} onChange={(event) => setMeasure(event.target.value as TimelineMeasure)}>
+              <option value="visibleTokens">{t('timeline.tokens')}</option>
+              <option value="messages">{t('timeline.messages')}</option>
+              <option value="conversations">{t('timeline.conversations')}</option>
+            </select>
+          </label>
         </div>
       </div>
-      <div className="timeline-bars" role="list" aria-label={`${kind} timeline`}>
+      <div className="timeline-bars" role="list" aria-label={t('timeline.listAria')}>
         {points.map((point) => <div className="timeline-row" role="listitem" key={point.key}><span>{point.key}</span><strong>{point[measure].toLocaleString()}</strong></div>)}
-        {points.length === 0 ? <p className="data-note">No dated timeline metrics are stored for this analysis.</p> : null}
+        {points.length === 0 ? <p className="data-note">{t('timeline.empty')}</p> : null}
       </div>
       <article className="analytics-panel">
-        <h3>Weekday / hour heatmap summary</h3>
-        <p className="data-note">Top UTC weekday/hour slots by visible tokens, derived from hourly aggregates.</p>
+        <h3>{t('timeline.heatmapTitle')}</h3>
+        <p className="data-note">{t('timeline.heatmapNote')}</p>
         <div className="heatmap-summary">{heatmap.map(([key, value]) => { const [day, hour] = key.split('-'); return <span className="heat-cell" key={key}>D{day} {hour?.padStart(2,'0')}:00 · {value.toLocaleString()}</span>; })}</div>
       </article>
     </section>
