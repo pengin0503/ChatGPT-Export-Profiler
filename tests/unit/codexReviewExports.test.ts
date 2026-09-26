@@ -46,7 +46,7 @@ describe('Codex review export hardening regressions', () => {
   it('escapes active HTML and Markdown link syntax in attacker-controlled cells', () => {
     const markdown = exportMarkdown(maliciousFixture());
     expect(markdown).not.toContain(htmlPayload);
-    expect(markdown).not.toContain('](javascript:alert(1))');
+    expect(markdown).not.toContain(markdownLinkPayload);
     expect(markdown).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(markdown).toContain('\\[open\\](javascript:alert(1))');
   });
