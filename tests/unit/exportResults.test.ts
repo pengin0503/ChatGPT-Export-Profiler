@@ -7,7 +7,7 @@ import { buildAnalyticsExport } from '../../src/features/export-results/ExportRe
 import { openProfilerDb, PROFILER_DB_NAME } from '../../src/storage/db';
 
 const RAW_BODY_SENTINEL = 'RAW_BODY_SENTINEL_MUST_NEVER_EXPORT';
-
+const WITH_TITLES = { includeConversationTitles: true } as const;
 
 async function resetDb(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -69,7 +69,7 @@ function fixture(): AnalyticsExport {
 describe('privacy-safe analytics export', () => {
   it('serializes only the analytics DTO and never leaks extra raw body fields', () => {
     const value = { ...fixture(), rawBody: RAW_BODY_SENTINEL, messageText: RAW_BODY_SENTINEL } as unknown as AnalyticsExport;
-    const outputs = [exportJson(value), exportCsv(value), exportMarkdown(value)];
+    const outputs = [exportJson(value, WITH_TITLES), exportCsv(value, WITH_TITLES), exportMarkdown(value, WITH_TITLES)];
 
     for (const output of outputs) {
       expect(output).toContain('synthetic');
@@ -81,14 +81,14 @@ describe('privacy-safe analytics export', () => {
     expect(parsed).not.toHaveProperty('messageText');
   });
 
-  it('neutralizes spreadsheet formulas and escapes Markdown table content', () => {
-    const csv = exportCsv(fixture());
+  it('neutralizes spreadsheet formulas and escapes Markdown table content when titles are explicitly included', () => {
+    const csv = exportCsv(fixture(), WITH_TITLES);
     expect(csv).toContain("'=SUM(A1:A2)");
     expect(csv).toContain("'+formula");
     expect(csv).toContain("'-formula");
     expect(csv).toContain("'@formula");
 
-    const markdown = exportMarkdown(fixture());
+    const markdown = exportMarkdown(fixture(), WITH_TITLES);
     expect(markdown).toContain('=SUM(A1:A2) \\| synthetic<br>line');
     expect(markdown).toContain('calculated');
     expect(markdown).toContain('estimated');
