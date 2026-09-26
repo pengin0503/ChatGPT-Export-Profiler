@@ -3,6 +3,7 @@ import { calculateHistoricalVisibleCost, calculateScenarioCost, type PricingReco
 import { loadPricingRecords } from '../../analysis/pricingHistory';
 import { MetricBadge } from '../../components/MetricBadge';
 import { BUILT_IN_PRICING_V1 } from '../../data/pricing.v1';
+import { formatMessage, useI18n } from '../../i18n';
 import { getModelMetrics, type StoredModelMetric } from '../../storage/analyticsQueries';
 import { openProfilerDb } from '../../storage/db';
 import { CostScenarioEditor, type CostScenarioRequest } from './CostScenarioEditor';
@@ -23,8 +24,8 @@ function latestPrice(modelId: string, pricing: readonly PricingRecord[]): Pricin
     .sort((a, b) => Date.parse(b.effectiveFrom) - Date.parse(a.effectiveFrom) || Number(b.source === 'local user override') - Number(a.source === 'local user override'))[0];
 }
 
-function money(value: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 6 }).format(value);
+function money(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale === 'ja' ? 'ja-JP' : 'en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 6 }).format(value);
 }
 
 function objectValue(value: unknown): Record<string, unknown> | undefined {
@@ -69,6 +70,7 @@ async function loadStoredScenario(analysisId: string): Promise<ScenarioView | un
 }
 
 export function CostPage({ analysisId }: CostPageProps) {
+  const { locale, t } = useI18n();
   const [models, setModels] = useState<StoredModelMetric[]>([]);
   const [pricing, setPricing] = useState<PricingRecord[]>([...BUILT_IN_PRICING_V1]);
   const [scenario, setScenario] = useState<ScenarioView>();
@@ -87,11 +89,11 @@ export function CostPage({ analysisId }: CostPageProps) {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setLoadError(error instanceof Error ? error.message : 'Unable to load cost data.');
+        setLoadError(error instanceof Error ? error.message : t('cost.loadFailed'));
         setLoaded(true);
       });
     return () => { active = false; };
-  }, [analysisId]);
+  }, [analysisId, t]);
 
   const visible = useMemo(() => {
     let cost = 0;
@@ -100,21 +102,21 @@ export function CostPage({ analysisId }: CostPageProps) {
       const result = calculateHistoricalVisibleCost(model.modelId, model.usageByDay, pricing);
       cost += result.cost;
       if (result.missingUsageHistory) {
-        coverageGaps.push(`${model.modelId}: date-level usage history unavailable; reimport this analysis`);
+        coverageGaps.push(formatMessage(t('cost.missingUsageHistory'), { model: model.modelId }));
       }
       if (result.missingDates.length) {
-        coverageGaps.push(`${model.modelId}: no applicable price on ${result.missingDates.join(', ')}`);
+        coverageGaps.push(formatMessage(t('cost.missingPriceDates'), { model: model.modelId, dates: result.missingDates.join(', ') }));
       }
     }
     return { cost, coverageGaps };
-  }, [models, pricing]);
+  }, [models, pricing, t]);
 
   const modelIds = useMemo(() => [...new Set(pricing.map((record) => record.model))].sort(), [pricing]);
 
   async function calculate(request: CostScenarioRequest): Promise<void> {
     const price = latestPrice(request.replacementModelId, pricing);
     if (!price) {
-      setLoadError(`No pricing record is available for ${request.replacementModelId}.`);
+      setLoadError(formatMessage(t('cost.noPrice'), { model: request.replacementModelId }));
       return;
     }
     const usage = models.reduce(
@@ -139,28 +141,33 @@ export function CostPage({ analysisId }: CostPageProps) {
 
   return (
     <section className="analytics-page" aria-labelledby="cost-heading">
-      <p className="eyebrow">API-EQUIVALENT ANALYSIS</p>
-      <h2 id="cost-heading">Cost</h2>
-      <p className="muted-copy">These values use API pricing as an analytical equivalent and are not ChatGPT subscription charges.</p>
-      {!loaded ? <p className="muted-copy">Loading cost data…</p> : (
+      <p className="eyebrow">{t('cost.eyebrow')}</p>
+      <h2 id="cost-heading">{t('nav.cost')}</h2>
+      <p className="muted-copy">{t('cost.description')}</p>
+      {!loaded ? <p className="muted-copy">{t('cost.loading')}</p> : (
         <>
           <div className="metric-grid">
             <MetricBadge
-              label="Visible-token API-equivalent cost"
-              value={money(visible.cost)}
+              label={t('cost.visibleEquivalent')}
+              value={money(visible.cost, locale)}
               provenance="calculated"
-              detail={visible.coverageGaps.length ? 'One or more model/date ranges need attention.' : 'All observed model/date pairs have pricing coverage.'}
+              detail={visible.coverageGaps.length ? t('cost.coverageAttention') : t('cost.coverageComplete')}
             />
             {scenario ? (
               <MetricBadge
-                label="Estimated scenario cost"
-                value={`${money(scenario.lower)}–${money(scenario.upper)}`}
+                label={t('cost.estimatedScenario')}
+                value={`${money(scenario.lower, locale)}–${money(scenario.upper, locale)}`}
                 provenance="estimated"
-                detail={`Assumptions: ${scenario.request.replacementModelId}; cache ${scenario.request.assumptions.cacheRatio}; hidden input ${scenario.request.assumptions.hiddenInputOverheadRatio}; reasoning output ${scenario.request.assumptions.reasoningOutputOverheadRatio}.`}
+                detail={formatMessage(t('cost.assumptions'), {
+                  model: scenario.request.replacementModelId,
+                  cache: scenario.request.assumptions.cacheRatio,
+                  hidden: scenario.request.assumptions.hiddenInputOverheadRatio,
+                  reasoning: scenario.request.assumptions.reasoningOutputOverheadRatio
+                })}
               />
             ) : null}
           </div>
-          {visible.coverageGaps.length ? <p className="quality-note">Coverage gap: {visible.coverageGaps.join('; ')}.</p> : null}
+          {visible.coverageGaps.length ? <p className="quality-note">{formatMessage(t('cost.coverageGap'), { gaps: visible.coverageGaps.join('; ') })}</p> : null}
           <CostScenarioEditor modelIds={modelIds} onCalculate={calculate} />
         </>
       )}
