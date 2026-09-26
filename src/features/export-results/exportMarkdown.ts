@@ -8,8 +8,6 @@ function markdownCell(value: string | number | null | undefined): string {
     .replace(/\\/g, '\\\\')
     .replace(/\[/g, '\\[')
     .replace(/\]/g, '\\]')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
     .replace(/\|/g, '\\|')
     .replace(/\r?\n/g, '<br>');
 }
