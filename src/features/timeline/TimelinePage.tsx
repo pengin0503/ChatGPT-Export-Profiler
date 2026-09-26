@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
+import { loadPricingRecords } from '../../analysis/pricingHistory';
+import type { PricingRecord } from '../../analysis/pricing';
 import { useI18n } from '../../i18n';
-import { getTimelineMetrics, type StoredTimelineMetric, type TimelineKind } from '../../storage/analyticsQueries';
+import {
+  calculatePricingAwareCost,
+  getTimelineMetrics,
+  type StoredTimelineMetric,
+  type TimelineKind
+} from '../../storage/analyticsQueries';
 
 interface TimelinePageProps { analysisId: string }
-type TimelineMeasure = 'visibleTokens' | 'messages' | 'conversations';
+type TimelineMeasure = 'visibleTokens' | 'messages' | 'conversations' | 'cost' | 'webSearches' | 'toolEvents';
 
 function heatmapKey(hourKey: string): string | undefined {
   const date = new Date(`${hourKey}:00:00Z`);
@@ -11,19 +18,44 @@ function heatmapKey(hourKey: string): string | undefined {
   return `${date.getUTCDay()}-${date.getUTCHours()}`;
 }
 
+function formatTimelineValue(
+  point: StoredTimelineMetric,
+  measure: TimelineMeasure,
+  pricing: readonly PricingRecord[],
+  locale: string,
+  coverageGap: string
+): string {
+  if (measure === 'cost') {
+    const result = calculatePricingAwareCost(point.usageByDay, pricing);
+    if (!result.coverageComplete) return coverageGap;
+    return new Intl.NumberFormat(locale === 'ja' ? 'ja-JP' : 'en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 6
+    }).format(result.cost);
+  }
+  return point[measure].toLocaleString();
+}
+
 export function TimelinePage({ analysisId }: TimelinePageProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [kind, setKind] = useState<TimelineKind>('day');
   const [measure, setMeasure] = useState<TimelineMeasure>('visibleTokens');
   const [points, setPoints] = useState<StoredTimelineMetric[]>([]);
   const [hours, setHours] = useState<StoredTimelineMetric[]>([]);
+  const [pricing, setPricing] = useState<PricingRecord[]>([]);
 
   useEffect(() => {
     let active = true;
-    void Promise.all([getTimelineMetrics(analysisId, kind), getTimelineMetrics(analysisId, 'hour')]).then(([next, hourly]) => {
+    void Promise.all([
+      getTimelineMetrics(analysisId, kind),
+      getTimelineMetrics(analysisId, 'hour'),
+      loadPricingRecords()
+    ]).then(([next, hourly, nextPricing]) => {
       if (!active) return;
       setPoints(next);
       setHours(hourly);
+      setPricing(nextPricing);
     });
     return () => { active = false; };
   }, [analysisId, kind]);
@@ -63,12 +95,20 @@ export function TimelinePage({ analysisId }: TimelinePageProps) {
               <option value="visibleTokens">{t('timeline.tokens')}</option>
               <option value="messages">{t('timeline.messages')}</option>
               <option value="conversations">{t('timeline.conversations')}</option>
+              <option value="cost">{t('timeline.cost')}</option>
+              <option value="webSearches">{t('timeline.webSearches')}</option>
+              <option value="toolEvents">{t('timeline.toolEvents')}</option>
             </select>
           </label>
         </div>
       </div>
       <div className="timeline-bars" role="list" aria-label={timelineListLabel}>
-        {points.map((point) => <div className="timeline-row" role="listitem" key={point.key}><span>{point.key}</span><strong>{point[measure].toLocaleString()}</strong></div>)}
+        {points.map((point) => (
+          <div className="timeline-row" role="listitem" key={point.key}>
+            <span>{point.key}</span>
+            <strong>{formatTimelineValue(point, measure, pricing, locale, t('timeline.costCoverageGap'))}</strong>
+          </div>
+        ))}
         {points.length === 0 ? <p className="data-note">{t('timeline.empty')}</p> : null}
       </div>
       <article className="analytics-panel">
