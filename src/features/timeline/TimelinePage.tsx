@@ -44,6 +44,7 @@ export function TimelinePage({ analysisId }: TimelinePageProps) {
     month: t('timeline.month'),
     year: t('timeline.year')
   };
+  const timelineListLabel = `${bucketLabels[kind]} ${t('timeline.listAria').toLowerCase()}`;
 
   return (
     <section className="analytics-page" aria-labelledby="timeline-heading">
@@ -66,7 +67,7 @@ export function TimelinePage({ analysisId }: TimelinePageProps) {
           </label>
         </div>
       </div>
-      <div className="timeline-bars" role="list" aria-label={t('timeline.listAria')}>
+      <div className="timeline-bars" role="list" aria-label={timelineListLabel}>
         {points.map((point) => <div className="timeline-row" role="listitem" key={point.key}><span>{point.key}</span><strong>{point[measure].toLocaleString()}</strong></div>)}
         {points.length === 0 ? <p className="data-note">{t('timeline.empty')}</p> : null}
       </div>
