@@ -13,13 +13,13 @@ async function collect(file: Blob): Promise<unknown[]> {
 describe('streamConversationObjects with sharded exports', () => {
   it('streams every synthetic conversation shard in numeric shard order', async () => {
     const file = await makeZip([
-      { name: 'conversations-002.json', text: JSON.stringify([{ id: 'synthetic-2', mapping: {} }]) },
-      { name: 'conversations-001.json', text: JSON.stringify([{ id: 'synthetic-1', mapping: {} }]) }
+      { name: 'conversations-001.json', text: JSON.stringify([{ id: 'synthetic-1', mapping: {} }]) },
+      { name: 'conversations-000.json', text: JSON.stringify([{ id: 'synthetic-0', mapping: {} }]) }
     ]);
 
     await expect(collect(file)).resolves.toEqual([
-      { id: 'synthetic-1', mapping: {} },
-      { id: 'synthetic-2', mapping: {} }
+      { id: 'synthetic-0', mapping: {} },
+      { id: 'synthetic-1', mapping: {} }
     ]);
   });
 });
