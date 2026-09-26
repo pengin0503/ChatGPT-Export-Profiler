@@ -26,11 +26,18 @@ A calculated value can be internally reproducible while still differing from an 
 
 Estimated values require assumptions that the export cannot establish. Cost scenarios are the principal example. Estimated output should not be presented as an invoice, billing record, or exact reconstruction of hidden token usage.
 
+## Export container compatibility
+
+The logical conversation payload may be represented either by a single `conversations.json` entry or by numbered `conversations-<n>.json` shards. The importer treats validated shards as one logical conversation stream and applies conversation-size safety limits to their combined uncompressed size.
+
+The profiler does not require conversation shards to be rewritten or uploaded elsewhere. ZIP inspection, decompression, parsing, and analysis remain local to the application.
+
 ## Token counts
 
 Token counts are reconstructed locally from text available in the export and the profiler's local tokenizer/model mapping. Important limitations include:
 
 - exported text may omit hidden system/developer instructions, tool serialization, reasoning tokens, or other server-side context;
+- recognized reasoning containers are not treated as visible message body text and are excluded from visible-token calculations;
 - the exact production tokenizer or tokenizer revision may differ from the local mapping;
 - cache reads/writes and other provider-side accounting dimensions cannot be inferred reliably from ordinary visible text;
 - unknown model IDs may use fallback tokenization with lower confidence;
