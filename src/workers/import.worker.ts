@@ -92,7 +92,12 @@ async function runImport(message: StartImportMessage): Promise<void> {
     });
 
     if (!signal.aborted) {
-      scope.postMessage({ type: 'COMPLETE', analysisId: message.analysisId, source: 'import' });
+      scope.postMessage({
+        type: 'COMPLETE',
+        analysisId: message.analysisId,
+        source: 'import',
+        quality: quality.snapshot()
+      });
     }
   } catch (error) {
     if (signal.aborted) return;
