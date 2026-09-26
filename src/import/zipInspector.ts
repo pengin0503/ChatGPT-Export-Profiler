@@ -148,8 +148,12 @@ export async function inspectExportZip(
     if (ambiguousConversationPayload) {
       blockingIssues.push({ code: 'DUPLICATE_CONVERSATIONS' });
     }
-    if (!ambiguousConversationPayload && shardCandidates.length > 0 && !shardsAreContiguous(shardCandidates.map(({ index }) => index))) {
-      blockingIssues.push({ code: 'INCOMPLETE_CONVERSATION_SHARDS' });
+    if (!ambiguousConversationPayload && shardCandidates.length > 0) {
+      const indices = shardCandidates.map(({ index }) => index);
+      const missingKnownStart = manifestCandidates.length === 0 && indices[0] !== 0;
+      if (!shardsAreContiguous(indices) || missingKnownStart) {
+        blockingIssues.push({ code: 'INCOMPLETE_CONVERSATION_SHARDS' });
+      }
     }
 
     const selectedEntries = ambiguousConversationPayload
