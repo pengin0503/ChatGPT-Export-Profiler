@@ -48,6 +48,7 @@ interface ImportControllerDependencies {
   createImportWorker(): WorkerPort;
   createAnalysisWorker(): WorkerPort;
   createAnalysis(record: AnalysisRecord): Promise<void>;
+  getAnalysis(id: string): Promise<AnalysisRecord | undefined>;
   updateAnalysisStatus(id: string, status: AnalysisStatus): Promise<void>;
 }
 
@@ -57,6 +58,7 @@ const DEFAULT_DEPENDENCIES: ImportControllerDependencies = {
   createImportWorker: () => new Worker(new URL('../../workers/import.worker.ts', import.meta.url), { type: 'module' }),
   createAnalysisWorker: () => new Worker(new URL('../../workers/analysis.worker.ts', import.meta.url), { type: 'module' }),
   createAnalysis: (record) => analysisRepository.create(record),
+  getAnalysis: (id) => analysisRepository.get(id),
   updateAnalysisStatus: (id, status) => analysisRepository.updateStatus(id, status)
 };
 
@@ -68,6 +70,13 @@ function abortError(): Error {
 
 function hasConversationPayload(inspection: ZipInspection): boolean {
   return Boolean(inspection.conversationEntry) || Boolean(inspection.conversationEntries?.length);
+}
+
+function isResumeCompatibleAnalysis(analysis: AnalysisRecord | undefined): boolean {
+  return analysis !== undefined &&
+    analysis.schemaVersion === ANALYSIS_SCHEMA_VERSION &&
+    analysis.analyzerVersion === ANALYZER_VERSION &&
+    analysis.tokenizerVersion === TOKENIZER_VERSION;
 }
 
 export class ImportPipelineError extends Error {
@@ -144,6 +153,12 @@ export class ImportController {
 
   async resume(file: Blob, checkpoint: ImportCheckpoint, options: ImportResumeOptions = {}): Promise<ImportSessionStartResult> {
     const generation = ++this.startupGeneration;
+    const analysis = await this.dependencies.getAnalysis(checkpoint.analysisId);
+    this.assertActiveGeneration(generation);
+    if (!isResumeCompatibleAnalysis(analysis)) {
+      throw new ImportPipelineError('ANALYSIS_VERSION_MISMATCH', 'inspection', 'import.analysisVersionMismatch');
+    }
+
     const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
     this.assertActiveGeneration(generation);
     if (!inspection.ok || !hasConversationPayload(inspection)) {
