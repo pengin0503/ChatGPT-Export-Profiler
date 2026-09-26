@@ -15,10 +15,21 @@ import { openProfilerDb, PROFILER_DB_NAME } from '../../src/storage/db';
 async function resetDb(): Promise<void> {
   cleanup();
   await new Promise<void>((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      reject(new Error('Database deletion remained blocked after pending UI effects had time to close.'));
+    }, 2_000);
     const request = indexedDB.deleteDatabase(PROFILER_DB_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Database deletion blocked.'));
+    request.onsuccess = () => {
+      globalThis.clearTimeout(timeout);
+      resolve();
+    };
+    request.onerror = () => {
+      globalThis.clearTimeout(timeout);
+      reject(request.error);
+    };
+    // A just-unmounted component may still be completing an async IndexedDB read.
+    // `blocked` is a wait state, not a terminal error; the request proceeds once that connection closes.
+    request.onblocked = () => undefined;
   });
 }
 
