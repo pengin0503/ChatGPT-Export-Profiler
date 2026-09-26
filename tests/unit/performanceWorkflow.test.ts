@@ -8,7 +8,7 @@ describe('scaled performance verification', () => {
     const release = readFileSync('.github/workflows/release.yml', 'utf8');
     expect(ci).toContain('npm run make:fixture:1k');
     expect(release).toContain('npm run make:fixture:10k');
-    expect(release).toContain('PERF_FIXTURE=tests/fixtures/generated-10k.zip');
+    expect(release).toContain('PERF_FIXTURE: tests/fixtures/generated-10k.zip');
 
     expect(existsSync('.github/workflows/performance-scale.yml')).toBe(true);
     const scaled = readFileSync('.github/workflows/performance-scale.yml', 'utf8');
