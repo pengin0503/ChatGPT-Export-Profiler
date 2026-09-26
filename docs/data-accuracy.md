@@ -30,7 +30,9 @@ Estimated values require assumptions that the export cannot establish. Cost scen
 
 The logical conversation payload may be represented either by a single `conversations.json` entry or by numbered `conversations-<n>.json` shards. The importer treats validated shards as one logical conversation stream and applies conversation-size safety limits to their combined uncompressed size.
 
-The profiler does not require conversation shards to be rewritten or uploaded elsewhere. ZIP inspection, decompression, parsing, and analysis remain local to the application.
+For sharded exports, the importer rejects duplicate shard indices and gaps in the observed numeric shard sequence. If a recognized `export_manifest.json` declares the logical conversations shard set, the declared count and ordered shard filenames must match the physical conversation shards. Future/unrecognized manifest structures are not assigned guessed semantics.
+
+The profiler does not require conversation shards to be rewritten or uploaded elsewhere. ZIP inspection, decompression, manifest consistency checks, parsing, and analysis remain local to the application.
 
 ## Token counts
 
@@ -42,6 +44,8 @@ Token counts are reconstructed locally from text available in the export and the
 - cache reads/writes and other provider-side accounting dimensions cannot be inferred reliably from ordinary visible text;
 - unknown model IDs may use fallback tokenization with lower confidence;
 - attachments or non-text content may not have a directly reconstructable token equivalent.
+
+Data Quality distinguishes tokenizer confidence as `exact`, `family`, and `fallback`. Only exact/family mappings count toward tokenizer-identification coverage; fallback token counts remain calculated visible-token values but are reported separately instead of being presented as confidently identified tokenization.
 
 For these reasons, a locally calculated visible-token count can be useful for relative analysis while differing materially from API usage/billing tokens.
 
@@ -66,6 +70,7 @@ Consequences:
 - malformed records can be skipped or partially represented;
 - totals can be lower than the raw number of malformed objects in the ZIP;
 - unknown schema keys are surfaced in Data Quality so schema drift is visible;
+- structural unknowns are recorded as generalized field paths and value types, not as the source values themselves;
 - quality/coverage indicators should be consulted before drawing conclusions from a partial export.
 
 ## Time-based metrics
@@ -89,8 +94,16 @@ User-entered reported totals are stored/displayed as a separate provenance categ
 
 A difference between two totals is therefore evidence of a measurement difference, not by itself evidence that either source is incorrect.
 
+## Import identity and recovery
+
+Import identity uses a local SHA-256 fingerprint over bounded samples plus export-container metadata. Fingerprint version 3 excludes filesystem `lastModified` from the primary content identity so copying or re-downloading identical bytes does not by itself make the export appear unrelated. The sampler covers multiple evenly spaced regions of larger files while remaining bounded.
+
+For migration compatibility, the application can also compute the previous fingerprint form locally and use it only to recognize analyses/checkpoints created by older versions. Fingerprints are recovery/duplicate-detection aids rather than cryptographic proof that every byte of a large archive is identical.
+
 ## Versioning and reproducibility
 
-Each local analysis record stores analyzer/schema/tokenizer/pricing dataset version fields. When comparing results across application versions, treat changes in parser, normalization, tokenizer mapping, or pricing data as potential causes of metric differences.
+Each local analysis record stores application, analyzer, analysis-schema, tokenizer, and pricing-dataset version fields. These values are centralized in the application source rather than being independently hard-coded at import call sites. When parser/normalization/tokenizer semantics change, the corresponding analysis provenance version is advanced so old and new local analyses are distinguishable.
+
+When comparing results across application versions, treat changes in parser, normalization, tokenizer mapping, or pricing data as potential causes of metric differences.
 
 Privacy-safe analytics exports include only the supported analytics DTO rather than raw source objects. For reproducibility, retain the application version and any local model/pricing overrides used for the analysis alongside the exported analytics report.
