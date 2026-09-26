@@ -2,7 +2,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ImportController, type WorkerPort } from '../../src/features/import/importController';
 import type { PipelineMessage } from '../../src/import/pipelineProtocol';
-import type { ImportCheckpoint } from '../../src/storage/repositories';
+import type { AnalysisRecord, ImportCheckpoint } from '../../src/storage/repositories';
+import {
+  ANALYSIS_SCHEMA_VERSION,
+  ANALYZER_VERSION,
+  APP_VERSION,
+  PRICING_DATASET_VERSION,
+  TOKENIZER_VERSION
+} from '../../src/version';
 
 class RecordingWorker implements WorkerPort {
   readonly messages: PipelineMessage[] = [];
@@ -48,14 +55,33 @@ function successfulShardedInspection() {
   };
 }
 
-function dependencies(importWorker = new RecordingWorker(), analysisWorker = new RecordingWorker()) {
+function currentAnalysis(id = 'analysis-resume'): AnalysisRecord {
+  return {
+    id,
+    fingerprint: 'synthetic-fingerprint',
+    createdAt: 1,
+    status: 'running',
+    appVersion: APP_VERSION,
+    schemaVersion: ANALYSIS_SCHEMA_VERSION,
+    analyzerVersion: ANALYZER_VERSION,
+    tokenizerVersion: TOKENIZER_VERSION,
+    pricingDatasetVersion: PRICING_DATASET_VERSION
+  };
+}
+
+function dependencies(
+  importWorker = new RecordingWorker(),
+  analysisWorker = new RecordingWorker(),
+  analysis: AnalysisRecord | undefined = currentAnalysis()
+) {
   return {
     inspectZip: async () => successfulInspection(),
     fingerprintImport: async () => ({ hash: 'synthetic-fingerprint' } as never),
     createImportWorker: () => importWorker,
     createAnalysisWorker: () => analysisWorker,
     createAnalysis: async () => {},
-    updateAnalysisStatus: async () => {}
+    updateAnalysisStatus: async () => {},
+    getAnalysis: async () => analysis
   };
 }
 
@@ -72,6 +98,26 @@ describe('ImportController', () => {
       controller.start(new Blob(['synthetic ZIP bytes']), { profile: 'standard', analysisId: 'analysis-sharded-test' })
     ).resolves.toMatchObject({ analysisId: 'analysis-sharded-test' });
     expect(importWorker.messages).toContainEqual(expect.objectContaining({ type: 'START_IMPORT' }));
+    controller.cancel();
+  });
+
+  it('persists centralized analysis provenance versions', async () => {
+    const createAnalysis = vi.fn(async () => {});
+    const controller = new ImportController({ ...dependencies(), createAnalysis });
+
+    await controller.start(new Blob(['synthetic ZIP bytes']), {
+      profile: 'standard',
+      analysisId: 'analysis-version-test'
+    });
+
+    expect(createAnalysis).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'analysis-version-test',
+      appVersion: APP_VERSION,
+      schemaVersion: ANALYSIS_SCHEMA_VERSION,
+      analyzerVersion: ANALYZER_VERSION,
+      tokenizerVersion: TOKENIZER_VERSION,
+      pricingDatasetVersion: PRICING_DATASET_VERSION
+    }));
     controller.cancel();
   });
 
@@ -168,5 +214,57 @@ describe('ImportController', () => {
       modelAliases: { 'raw-model': 'canonical-old' }
     }));
     controller.cancel();
+  });
+
+  it('resumes a legacy checkpoint when the v3 fingerprint exposes a matching legacy hash', async () => {
+    const importWorker = new RecordingWorker();
+    const analysisWorker = new RecordingWorker();
+    const controller = new ImportController({
+      ...dependencies(importWorker, analysisWorker, currentAnalysis('analysis-legacy-resume')),
+      fingerprintImport: async () => ({
+        hash: 'synthetic-v3-fingerprint',
+        legacyHash: 'synthetic-legacy-fingerprint'
+      } as never)
+    });
+    const checkpoint: ImportCheckpoint = {
+      analysisId: 'analysis-legacy-resume',
+      fingerprint: 'synthetic-legacy-fingerprint',
+      stage: 'aggregation',
+      committedBatches: 1,
+      processedConversations: 50,
+      updatedAt: 456
+    };
+
+    await expect(controller.resume(new Blob(['synthetic ZIP bytes']), checkpoint, { profile: 'standard' }))
+      .resolves.toMatchObject({ analysisId: 'analysis-legacy-resume' });
+    expect(importWorker.messages).toContainEqual(expect.objectContaining({
+      type: 'START_IMPORT',
+      fingerprint: 'synthetic-legacy-fingerprint'
+    }));
+    controller.cancel();
+  });
+
+  it('rejects a checkpoint created with stale analyzer semantics instead of mixing versions', async () => {
+    const importWorker = new RecordingWorker();
+    const analysisWorker = new RecordingWorker();
+    const staleAnalysis = {
+      ...currentAnalysis('analysis-stale-resume'),
+      analyzerVersion: Math.max(0, ANALYZER_VERSION - 1),
+      tokenizerVersion: Math.max(0, TOKENIZER_VERSION - 1)
+    };
+    const controller = new ImportController({ ...dependencies(importWorker, analysisWorker, staleAnalysis) });
+    const checkpoint: ImportCheckpoint = {
+      analysisId: 'analysis-stale-resume',
+      fingerprint: 'synthetic-fingerprint',
+      stage: 'aggregation',
+      committedBatches: 2,
+      processedConversations: 100,
+      updatedAt: 789
+    };
+
+    await expect(controller.resume(new Blob(['synthetic ZIP bytes']), checkpoint, { profile: 'standard' }))
+      .rejects.toMatchObject({ code: 'ANALYSIS_VERSION_MISMATCH', messageKey: 'import.analysisVersionMismatch' });
+    expect(importWorker.messages).toHaveLength(0);
+    expect(analysisWorker.messages).toHaveLength(0);
   });
 });

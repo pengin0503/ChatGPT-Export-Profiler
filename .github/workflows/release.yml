@@ -2,8 +2,6 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
 
@@ -12,23 +10,15 @@ permissions:
 
 jobs:
   release:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release-rc]') }}
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-      - name: Determine release tag
-        shell: bash
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            release_tag="$GITHUB_REF_NAME"
-          else
-            release_tag="v1.0.0-rc.1"
-          fi
-          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
@@ -44,18 +34,19 @@ jobs:
       - name: Build offline package
         shell: bash
         run: GITHUB_REF_NAME="$RELEASE_TAG" npm run make:offline
-      - name: Create GitHub Release if needed
+      - name: Create immutable GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            exit 0
+            echo "Release $RELEASE_TAG already exists; refusing to replace an immutable release." >&2
+            exit 1
           fi
 
           if [[ "$RELEASE_TAG" == *-* ]]; then
             cat > release-notes.md <<'EOF'
-          This is the iPad validation release candidate for ChatGPT Export Profiler.
+          This is an iPad validation release candidate for ChatGPT Export Profiler.
 
           Recommended iPad validation path:
           1. Open the GitHub Pages deployment in Safari and Orion.
@@ -73,4 +64,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload "$RELEASE_TAG" "artifacts/ChatGPT-Export-Profiler-${RELEASE_TAG#v}-offline.zip" --clobber
+        run: gh release upload "$RELEASE_TAG" "artifacts/ChatGPT-Export-Profiler-${RELEASE_TAG#v}-offline.zip"

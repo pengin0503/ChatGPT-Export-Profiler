@@ -58,6 +58,8 @@ function exportScenario(value: unknown): AnalyticsExportScenario | undefined {
   };
 }
 
+// This pure helper is intentionally exported from the component module for deterministic export tests.
+// eslint-disable-next-line react-refresh/only-export-components
 export async function buildAnalyticsExport(analysisId: string): Promise<AnalyticsExport> {
   const [overview, models, conversations, pricing, storedScenario] = await Promise.all([
     getOverviewMetrics(analysisId),

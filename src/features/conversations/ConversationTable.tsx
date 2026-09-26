@@ -12,6 +12,8 @@ interface ConversationTableProps {
 export function ConversationTable({ rows, total, onSelect }: ConversationTableProps) {
   const { t } = useI18n();
   const parentRef = useRef<HTMLDivElement>(null);
+  // TanStack Virtual intentionally returns imperative functions that React Compiler cannot memoize safely.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,

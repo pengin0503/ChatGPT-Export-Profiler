@@ -7,6 +7,13 @@ import {
 } from '../../import/pipelineProtocol';
 import { analysisRepository, type AnalysisRecord, type ImportCheckpoint } from '../../storage/repositories';
 import type { AnalysisStatus } from '../../storage/db';
+import {
+  ANALYSIS_SCHEMA_VERSION,
+  ANALYZER_VERSION,
+  APP_VERSION,
+  PRICING_DATASET_VERSION,
+  TOKENIZER_VERSION
+} from '../../version';
 
 export interface WorkerPort {
   postMessage(message: PipelineMessage): void;
@@ -41,6 +48,7 @@ interface ImportControllerDependencies {
   createImportWorker(): WorkerPort;
   createAnalysisWorker(): WorkerPort;
   createAnalysis(record: AnalysisRecord): Promise<void>;
+  getAnalysis(id: string): Promise<AnalysisRecord | undefined>;
   updateAnalysisStatus(id: string, status: AnalysisStatus): Promise<void>;
 }
 
@@ -50,6 +58,7 @@ const DEFAULT_DEPENDENCIES: ImportControllerDependencies = {
   createImportWorker: () => new Worker(new URL('../../workers/import.worker.ts', import.meta.url), { type: 'module' }),
   createAnalysisWorker: () => new Worker(new URL('../../workers/analysis.worker.ts', import.meta.url), { type: 'module' }),
   createAnalysis: (record) => analysisRepository.create(record),
+  getAnalysis: (id) => analysisRepository.get(id),
   updateAnalysisStatus: (id, status) => analysisRepository.updateStatus(id, status)
 };
 
@@ -61,6 +70,13 @@ function abortError(): Error {
 
 function hasConversationPayload(inspection: ZipInspection): boolean {
   return Boolean(inspection.conversationEntry) || Boolean(inspection.conversationEntries?.length);
+}
+
+function isResumeCompatibleAnalysis(analysis: AnalysisRecord | undefined): boolean {
+  return analysis !== undefined &&
+    analysis.schemaVersion === ANALYSIS_SCHEMA_VERSION &&
+    analysis.analyzerVersion === ANALYZER_VERSION &&
+    analysis.tokenizerVersion === TOKENIZER_VERSION;
 }
 
 export class ImportPipelineError extends Error {
@@ -118,11 +134,11 @@ export class ImportController {
       fingerprint: fingerprint.hash,
       createdAt: Date.now(),
       status: 'running',
-      appVersion: '0.1.0',
-      schemaVersion: 1,
-      analyzerVersion: 1,
-      tokenizerVersion: 1,
-      pricingDatasetVersion: 1
+      appVersion: APP_VERSION,
+      schemaVersion: ANALYSIS_SCHEMA_VERSION,
+      analyzerVersion: ANALYZER_VERSION,
+      tokenizerVersion: TOKENIZER_VERSION,
+      pricingDatasetVersion: PRICING_DATASET_VERSION
     });
     if (generation !== this.startupGeneration) {
       await this.dependencies.updateAnalysisStatus(analysisId, 'cancelled');
@@ -137,6 +153,12 @@ export class ImportController {
 
   async resume(file: Blob, checkpoint: ImportCheckpoint, options: ImportResumeOptions = {}): Promise<ImportSessionStartResult> {
     const generation = ++this.startupGeneration;
+    const analysis = await this.dependencies.getAnalysis(checkpoint.analysisId);
+    this.assertActiveGeneration(generation);
+    if (!isResumeCompatibleAnalysis(analysis)) {
+      throw new ImportPipelineError('ANALYSIS_VERSION_MISMATCH', 'inspection', 'import.analysisVersionMismatch');
+    }
+
     const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
     this.assertActiveGeneration(generation);
     if (!inspection.ok || !hasConversationPayload(inspection)) {
@@ -145,7 +167,7 @@ export class ImportController {
 
     const fingerprint = await this.dependencies.fingerprintImport(file, inspection);
     this.assertActiveGeneration(generation);
-    if (fingerprint.hash !== checkpoint.fingerprint) {
+    if (fingerprint.hash !== checkpoint.fingerprint && fingerprint.legacyHash !== checkpoint.fingerprint) {
       throw new ImportPipelineError('FINGERPRINT_MISMATCH', 'inspection', 'import.fingerprintMismatch');
     }
 
@@ -154,7 +176,7 @@ export class ImportController {
     this.beginWorkers(
       file,
       checkpoint.analysisId,
-      fingerprint.hash,
+      checkpoint.fingerprint,
       options.profile ?? 'standard',
       checkpoint,
       checkpoint.modelAliases ?? options.modelAliases,

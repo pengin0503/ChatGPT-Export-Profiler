@@ -36,8 +36,14 @@ export interface ConversationQueryResult {
 
 export interface OverviewMetrics {
   totals: { conversations: number; messages: number; visibleTokens: number };
-  peakDay: { key: string; messages: number; conversations: number; visibleTokens: number } | null;
+  peakDay: { key: string } & AggregateBucket | null;
   largestConversation: ConversationMetricRecord | null;
+}
+
+interface AggregateBucket {
+  messages: number;
+  conversations: number;
+  visibleTokens: number;
 }
 
 export interface StoredModelMetric {
@@ -145,7 +151,7 @@ function projectConversation(row: ConversationMetricRecord, range?: DateRange): 
   };
 }
 
-function sortRows(rows: ConversationMetricRecord[], sort: ConversationSort): void {
+function rowComparator(sort: ConversationSort): (a: ConversationMetricRecord, b: ConversationMetricRecord) => number {
   const normalized = (value: number | undefined, fallback: number) => value === undefined ? fallback : toSeconds(value);
   const duration = (row: ConversationMetricRecord) =>
     Math.max(0, normalized(row.lastTimestamp ?? row.firstTimestamp, 0) - normalized(row.firstTimestamp ?? row.lastTimestamp, 0));
@@ -160,7 +166,110 @@ function sortRows(rows: ConversationMetricRecord[], sort: ConversationSort): voi
     newest: (a, b) => newest(b) - newest(a),
     oldest: (a, b) => newest(a) - newest(b)
   };
-  rows.sort((a, b) => comparators[sort](a, b) || a.conversationId.localeCompare(b.conversationId));
+  const compare = comparators[sort];
+  return (a, b) => compare(a, b) || a.conversationId.localeCompare(b.conversationId);
+}
+
+function projectAndFilterConversation(
+  source: ConversationMetricRecord,
+  options: ConversationQueryOptions
+): ConversationMetricRecord | null {
+  const row = projectConversation(source, options.range);
+  if (!row) return null;
+  if (options.modelId && !row.modelIds.includes(options.modelId)) return null;
+  if (options.minTokens !== undefined && row.visibleTokens < options.minTokens) return null;
+  if (options.maxTokens !== undefined && row.visibleTokens > options.maxTokens) return null;
+  if (options.hasWeb !== undefined && row.hasWeb !== options.hasWeb) return null;
+  if (options.hasFiles !== undefined && row.hasFiles !== options.hasFiles) return null;
+  if (options.hasTools !== undefined && row.hasTools !== options.hasTools) return null;
+  return row;
+}
+
+function siftHeapUp(
+  heap: ConversationMetricRecord[],
+  index: number,
+  compare: (a: ConversationMetricRecord, b: ConversationMetricRecord) => number
+): void {
+  let current = index;
+  while (current > 0) {
+    const parent = (current - 1) >>> 1;
+    if (compare(heap[current], heap[parent]) <= 0) break;
+    [heap[current], heap[parent]] = [heap[parent], heap[current]];
+    current = parent;
+  }
+}
+
+function siftHeapDown(
+  heap: ConversationMetricRecord[],
+  compare: (a: ConversationMetricRecord, b: ConversationMetricRecord) => number
+): void {
+  let current = 0;
+  while (true) {
+    const left = current * 2 + 1;
+    const right = left + 1;
+    let worst = current;
+    if (left < heap.length && compare(heap[left], heap[worst]) > 0) worst = left;
+    if (right < heap.length && compare(heap[right], heap[worst]) > 0) worst = right;
+    if (worst === current) return;
+    [heap[current], heap[worst]] = [heap[worst], heap[current]];
+    current = worst;
+  }
+}
+
+function retainBoundedBest(
+  heap: ConversationMetricRecord[],
+  row: ConversationMetricRecord,
+  compare: (a: ConversationMetricRecord, b: ConversationMetricRecord) => number,
+  maximum: number
+): void {
+  if (maximum <= 0) return;
+  if (heap.length < maximum) {
+    heap.push(row);
+    siftHeapUp(heap, heap.length - 1, compare);
+    return;
+  }
+  if (compare(row, heap[0]) >= 0) return;
+  heap[0] = row;
+  siftHeapDown(heap, compare);
+}
+
+function hasConversationFilters(options: ConversationQueryOptions): boolean {
+  return Boolean(
+    options.range ||
+    options.modelId ||
+    options.minTokens !== undefined ||
+    options.maxTokens !== undefined ||
+    options.hasWeb !== undefined ||
+    options.hasFiles !== undefined ||
+    options.hasTools !== undefined
+  );
+}
+
+async function countConversationRows(
+  analysisId: string,
+  options: ConversationQueryOptions
+): Promise<number> {
+  const db = await openProfilerDb();
+  try {
+    const tx = db.transaction('conversationMetrics', 'readonly');
+    const index = tx.store.index('by-analysis');
+    if (!hasConversationFilters(options)) {
+      const total = await index.count(analysisId);
+      await tx.done;
+      return total;
+    }
+
+    let total = 0;
+    let cursor = await index.openCursor(analysisId);
+    while (cursor) {
+      if (projectAndFilterConversation(cursor.value, options)) total += 1;
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+    return total;
+  } finally {
+    db.close();
+  }
 }
 
 async function listConversationRows(analysisId: string): Promise<ConversationMetricRecord[]> {
@@ -172,26 +281,51 @@ async function listConversationRows(analysisId: string): Promise<ConversationMet
   }
 }
 
+async function scanConversationPage(
+  analysisId: string,
+  options: ConversationQueryOptions
+): Promise<ConversationQueryResult> {
+  const offset = Math.max(0, options.offset ?? 0);
+  const limit = Math.max(0, options.limit ?? 100);
+  const total = await countConversationRows(analysisId, options);
+  if (limit === 0 || offset >= total) return { total, rows: [] };
+
+  const pageLength = Math.min(limit, total - offset);
+  const compare = rowComparator(options.sort ?? 'newest');
+  const headSize = Math.min(Number.MAX_SAFE_INTEGER, offset + pageLength);
+  const tailSize = total - offset;
+  const retainTail = tailSize < headSize;
+  const maximum = retainTail ? tailSize : headSize;
+  const retentionCompare = retainTail
+    ? (a: ConversationMetricRecord, b: ConversationMetricRecord) => compare(b, a)
+    : compare;
+  const rows: ConversationMetricRecord[] = [];
+
+  const db = await openProfilerDb();
+  try {
+    const tx = db.transaction('conversationMetrics', 'readonly');
+    const index = tx.store.index('by-analysis');
+    let cursor = await index.openCursor(analysisId);
+    while (cursor) {
+      const row = projectAndFilterConversation(cursor.value, options);
+      if (row) retainBoundedBest(rows, row, retentionCompare, maximum);
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  } finally {
+    db.close();
+  }
+
+  rows.sort(compare);
+  if (retainTail) return { total, rows: rows.slice(0, pageLength) };
+  return { total, rows: rows.slice(offset, offset + pageLength) };
+}
+
 export async function queryConversationMetrics(
   analysisId: string,
   options: ConversationQueryOptions = {}
 ): Promise<ConversationQueryResult> {
-  const filtered = (await listConversationRows(analysisId)).flatMap((source) => {
-    const row = projectConversation(source, options.range);
-    if (!row) return [];
-    if (options.modelId && !row.modelIds.includes(options.modelId)) return [];
-    if (options.minTokens !== undefined && row.visibleTokens < options.minTokens) return [];
-    if (options.maxTokens !== undefined && row.visibleTokens > options.maxTokens) return [];
-    if (options.hasWeb !== undefined && row.hasWeb !== options.hasWeb) return [];
-    if (options.hasFiles !== undefined && row.hasFiles !== options.hasFiles) return [];
-    if (options.hasTools !== undefined && row.hasTools !== options.hasTools) return [];
-    return [row];
-  });
-  sortRows(filtered, options.sort ?? 'newest');
-  const total = filtered.length;
-  const offset = Math.max(0, options.offset ?? 0);
-  const limit = Math.max(0, options.limit ?? 100);
-  return { total, rows: filtered.slice(offset, offset + limit) };
+  return scanConversationPage(analysisId, options);
 }
 
 export async function listAllConversationMetrics(

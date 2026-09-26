@@ -1,10 +1,12 @@
-import { BlobReader, ZipReader } from '@zip.js/zip.js';
+import { BlobReader, TextWriter, ZipReader } from '@zip.js/zip.js';
 
 export const DEFAULT_ZIP_SAFETY = {
   maxEntries: 50_000,
   maxConversationBytes: 8 * 1024 * 1024 * 1024,
   maxCompressionRatio: 500
 } as const;
+
+const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
 
 export interface ZipSafetyPolicy {
   maxEntries: number;
@@ -16,6 +18,9 @@ export type ZipBlockingCode =
   | 'TOO_MANY_ENTRIES'
   | 'MISSING_CONVERSATIONS'
   | 'DUPLICATE_CONVERSATIONS'
+  | 'INCOMPLETE_CONVERSATION_SHARDS'
+  | 'INVALID_EXPORT_MANIFEST'
+  | 'MANIFEST_SHARD_MISMATCH'
   | 'UNSAFE_ENTRY_PATH'
   | 'CONVERSATIONS_TOO_LARGE'
   | 'SUSPICIOUS_COMPRESSION_RATIO'
@@ -40,6 +45,10 @@ export interface ZipInspection {
   /** Physical entries that together make up the logical conversations payload. */
   conversationEntries?: ZipEntrySummary[];
   blockingIssues: ZipBlockingIssue[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isUnsafeEntryPath(filename: string): boolean {
@@ -69,6 +78,29 @@ function summarizeEntry(entry: { filename: string; compressedSize: number; uncom
   };
 }
 
+function shardsAreContiguous(indices: number[]): boolean {
+  if (indices.length < 2) return true;
+  const first = indices[0];
+  return indices.every((index, offset) => index === first + offset);
+}
+
+function validateManifestValue(value: unknown, selectedShardNames: string[]): 'ignore' | 'ok' | 'invalid' | 'mismatch' {
+  if (!isRecord(value)) return 'invalid';
+  if (!isRecord(value.logical_files)) return 'ignore';
+  const conversations = value.logical_files['conversations.json'];
+  if (conversations === undefined) return 'ignore';
+  if (!isRecord(conversations)) return 'invalid';
+  if (conversations.sharded !== true) return selectedShardNames.length > 0 ? 'mismatch' : 'ignore';
+  if (!Array.isArray(conversations.files) || !conversations.files.every((file) => typeof file === 'string')) return 'invalid';
+  if (!Number.isSafeInteger(conversations.shard_count) || Number(conversations.shard_count) < 0) return 'invalid';
+
+  const declaredFiles = conversations.files as string[];
+  if (Number(conversations.shard_count) !== declaredFiles.length || declaredFiles.length !== selectedShardNames.length) {
+    return 'mismatch';
+  }
+  return declaredFiles.every((filename, index) => filename === selectedShardNames[index]) ? 'ok' : 'mismatch';
+}
+
 export async function inspectExportZip(
   file: Blob,
   policy: ZipSafetyPolicy = DEFAULT_ZIP_SAFETY
@@ -89,6 +121,9 @@ export async function inspectExportZip(
       .map((entry) => ({ entry, index: entry.directory ? undefined : shardIndex(entry.filename) }))
       .filter((candidate): candidate is { entry: (typeof entries)[number]; index: number } => candidate.index !== undefined)
       .sort((left, right) => left.index - right.index || left.entry.filename.localeCompare(right.entry.filename));
+    const manifestCandidates = entries.filter(
+      (entry) => !entry.directory && entry.filename === 'export_manifest.json'
+    );
 
     for (const entry of entries) {
       if (isUnsafeEntryPath(entry.filename)) {
@@ -113,6 +148,9 @@ export async function inspectExportZip(
     if (ambiguousConversationPayload) {
       blockingIssues.push({ code: 'DUPLICATE_CONVERSATIONS' });
     }
+    if (!ambiguousConversationPayload && shardCandidates.length > 0 && !shardsAreContiguous(shardCandidates.map(({ index }) => index))) {
+      blockingIssues.push({ code: 'INCOMPLETE_CONVERSATION_SHARDS' });
+    }
 
     const selectedEntries = ambiguousConversationPayload
       ? []
@@ -122,6 +160,22 @@ export async function inspectExportZip(
     const totalConversationBytes = selectedEntries.reduce((sum, entry) => sum + entry.uncompressedSize, 0);
     if (selectedEntries.length > 0 && totalConversationBytes > policy.maxConversationBytes) {
       blockingIssues.push({ code: 'CONVERSATIONS_TOO_LARGE', detail: String(totalConversationBytes) });
+    }
+
+    if (!ambiguousConversationPayload && shardCandidates.length > 0 && manifestCandidates.length > 0) {
+      const manifestEntry = manifestCandidates[0];
+      if (manifestCandidates.length !== 1 || manifestEntry.uncompressedSize > MAX_MANIFEST_BYTES || !('getData' in manifestEntry)) {
+        blockingIssues.push({ code: 'INVALID_EXPORT_MANIFEST' });
+      } else {
+        try {
+          const manifestText = await manifestEntry.getData(new TextWriter());
+          const validation = validateManifestValue(JSON.parse(manifestText), shardCandidates.map(({ entry }) => entry.filename));
+          if (validation === 'invalid') blockingIssues.push({ code: 'INVALID_EXPORT_MANIFEST' });
+          if (validation === 'mismatch') blockingIssues.push({ code: 'MANIFEST_SHARD_MISMATCH' });
+        } catch {
+          blockingIssues.push({ code: 'INVALID_EXPORT_MANIFEST' });
+        }
+      }
     }
 
     const conversationEntries = selectedEntries.map(summarizeEntry);

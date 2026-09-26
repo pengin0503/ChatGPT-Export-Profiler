@@ -206,11 +206,11 @@ describe('Codex review UI regressions', () => {
     expect(alert).toHaveTextContent(/does not match the paused import/i);
   });
 
-  it('makes every conversation reachable beyond the previous 10,000 row cap', async () => {
-    const analysisId = 'analysis-many';
+  it('paginates actual IndexedDB conversation results without loading every row into the UI', async () => {
+    const analysisId = 'analysis-paged';
     const db = await openProfilerDb();
     const tx = db.transaction('conversationMetrics', 'readwrite');
-    for (let index = 0; index < 10_001; index += 1) {
+    for (let index = 0; index < 501; index += 1) {
       await tx.store.put({
         analysisId,
         conversationId: `conversation-${String(index).padStart(5, '0')}`,
@@ -229,7 +229,13 @@ describe('Codex review UI regressions', () => {
     await tx.done;
     db.close();
 
+    const user = userEvent.setup();
     render(<ConversationsPage analysisId={analysisId} />);
-    expect(await screen.findByText('Showing 10,001 of 10,001 conversations')).toBeVisible();
-  }, 20_000);
+    expect(await screen.findByText('Showing 500 of 501 conversations')).toBeVisible();
+    expect(screen.getByText('1 / 2')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '»' }));
+    expect(await screen.findByText('Showing 1 of 501 conversations')).toBeVisible();
+    expect(screen.getByText('2 / 2')).toBeVisible();
+  });
 });

@@ -34,6 +34,16 @@ describe('fingerprintImport', () => {
     expect(first.hash).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('keeps content identity stable when only lastModified changes while retaining a legacy recovery hash', async () => {
+    const first = await fingerprintImport(syntheticFile('synthetic-export-a', 1_790_000_000_000), baseInspection);
+    const copied = await fingerprintImport(syntheticFile('synthetic-export-a', 1_790_000_123_456), baseInspection);
+
+    expect(copied.hash).toBe(first.hash);
+    expect(copied.legacyHash).toBeDefined();
+    expect(first.legacyHash).toBeDefined();
+    expect(copied.legacyHash).not.toBe(first.legacyHash);
+  });
+
   it('changes when source content changes', async () => {
     const first = await fingerprintImport(syntheticFile('synthetic-export-a'), baseInspection);
     const second = await fingerprintImport(syntheticFile('synthetic-export-b'), baseInspection);

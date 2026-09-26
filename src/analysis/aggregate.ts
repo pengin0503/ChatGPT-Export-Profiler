@@ -59,6 +59,15 @@ export interface ConversationMetric {
   usageByDay: Record<string, ConversationDailyUsage>;
 }
 
+export interface TokenizationCoverage {
+  attempted: number;
+  identified: number;
+  ratio: number | null;
+  exact: number;
+  family: number;
+  fallback: number;
+}
+
 export interface AggregationResult {
   totals: AggregateTotals;
   byModel: Record<string, ModelMetric>;
@@ -71,7 +80,7 @@ export interface AggregationResult {
   };
   peakDay: ({ key: string } & AggregateBucket) | null;
   medianMessageTokens: number;
-  tokenizationCoverage: { attempted: number; identified: number; ratio: number | null };
+  tokenizationCoverage: TokenizationCoverage;
   conversations: ConversationMetric[];
 }
 
@@ -219,6 +228,9 @@ export function createAggregator() {
   const conversationMetrics: ConversationMetric[] = [];
   let tokenizationAttempted = 0;
   let tokenizationIdentified = 0;
+  let tokenizationExact = 0;
+  let tokenizationFamily = 0;
+  let tokenizationFallback = 0;
 
   function updateBucket(kind: BucketKind, key: string, conversationId: string, tokenCount: number): void {
     let bucket = buckets[kind].get(key);
@@ -259,7 +271,15 @@ export function createAggregator() {
         canonicalModelId: message.canonicalModelId ?? inferredModel,
         rawModelSlug: message.rawModelSlug
       });
-      tokenizationIdentified += 1;
+      if (tokenResult.confidence === 'exact') {
+        tokenizationExact += 1;
+        tokenizationIdentified += 1;
+      } else if (tokenResult.confidence === 'family') {
+        tokenizationFamily += 1;
+        tokenizationIdentified += 1;
+      } else {
+        tokenizationFallback += 1;
+      }
       const tokenCount = tokenResult.count;
       const kind = roleClass(message.role);
       totals.messages += 1;
@@ -383,7 +403,10 @@ export function createAggregator() {
       tokenizationCoverage: {
         attempted: tokenizationAttempted,
         identified: tokenizationIdentified,
-        ratio: tokenizationAttempted === 0 ? null : tokenizationIdentified / tokenizationAttempted
+        ratio: tokenizationAttempted === 0 ? null : tokenizationIdentified / tokenizationAttempted,
+        exact: tokenizationExact,
+        family: tokenizationFamily,
+        fallback: tokenizationFallback
       },
       conversations: conversationMetrics.map((value) => ({
         ...value,
