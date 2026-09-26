@@ -153,7 +153,7 @@ export class ImportController {
       fingerprint.hash,
       options.profile ?? 'standard',
       checkpoint,
-      options.modelAliases,
+      checkpoint.modelAliases ?? options.modelAliases,
       options.zipSafetyPolicy
     );
     return { analysisId: checkpoint.analysisId, fingerprint };
