@@ -16,9 +16,9 @@ function formatDate(timestamp?: number): string {
   return ms === undefined ? '—' : new Date(ms).toISOString().slice(0, 10);
 }
 
-function modelCost(model: StoredModelMetric, pricing: readonly PricingRecord[]): string {
+function modelCost(model: StoredModelMetric, pricing: readonly PricingRecord[], coverageGapLabel: string): string {
   const result = calculateHistoricalVisibleCost(model.modelId, model.usageByDay, pricing);
-  if (result.missingUsageHistory || result.missingDates.length > 0) return 'coverage gap';
+  if (result.missingUsageHistory || result.missingDates.length > 0) return coverageGapLabel;
   return `$${result.cost.toFixed(4)}`;
 }
 
@@ -39,11 +39,25 @@ export function ModelsPage({ analysisId }: ModelsPageProps) {
 
   return (
     <section className="analytics-page" aria-labelledby="models-heading">
-      <p className="eyebrow">CALCULATED MODEL BREAKDOWN</p>
+      <p className="eyebrow">{t('models.eyebrow')}</p>
       <h2 id="models-heading">{t('nav.models')}</h2>
       <div className="table-shell">
         <table className="analytics-table">
-          <thead><tr><th>Model</th><th>Tokens</th><th>Share</th><th>Messages</th><th>Conversations</th><th>Input</th><th>Output</th><th>API-equivalent cost</th><th>First</th><th>Last</th><th>Raw aliases</th></tr></thead>
+          <thead>
+            <tr>
+              <th>{t('models.model')}</th>
+              <th>{t('models.tokens')}</th>
+              <th>{t('models.share')}</th>
+              <th>{t('models.messages')}</th>
+              <th>{t('models.conversations')}</th>
+              <th>{t('models.input')}</th>
+              <th>{t('models.output')}</th>
+              <th>{t('models.apiEquivalentCost')}</th>
+              <th>{t('models.first')}</th>
+              <th>{t('models.last')}</th>
+              <th>{t('models.rawAliases')}</th>
+            </tr>
+          </thead>
           <tbody>
             {models.map((model) => (
               <tr key={model.modelId}>
@@ -54,17 +68,17 @@ export function ModelsPage({ analysisId }: ModelsPageProps) {
                 <td>{model.conversations.toLocaleString()}</td>
                 <td>{model.inputTokens.toLocaleString()}</td>
                 <td>{model.outputTokens.toLocaleString()}</td>
-                <td>{modelCost(model, pricing)}</td>
+                <td>{modelCost(model, pricing, t('models.coverageGap'))}</td>
                 <td>{formatDate(model.firstTimestamp)}</td>
                 <td>{formatDate(model.lastTimestamp)}</td>
                 <td>{model.rawAliases.join(', ') || '—'}</td>
               </tr>
             ))}
-            {models.length === 0 ? <tr><td colSpan={11}>No model metrics are stored for this analysis.</td></tr> : null}
+            {models.length === 0 ? <tr><td colSpan={11}>{t('models.empty')}</td></tr> : null}
           </tbody>
         </table>
       </div>
-      <p className="data-note">API-equivalent cost uses the effective pricing history for each observed usage day, including local overrides. It is not ChatGPT subscription billing.</p>
+      <p className="data-note">{t('models.costNote')}</p>
     </section>
   );
 }
