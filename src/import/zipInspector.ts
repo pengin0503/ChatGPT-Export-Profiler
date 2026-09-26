@@ -35,7 +35,10 @@ export interface ZipEntrySummary {
 export interface ZipInspection {
   ok: boolean;
   entryCount: number;
+  /** Legacy single-file export entry, retained for compatibility with existing callers. */
   conversationEntry?: ZipEntrySummary;
+  /** Physical entries that together make up the logical conversations payload. */
+  conversationEntries?: ZipEntrySummary[];
   blockingIssues: ZipBlockingIssue[];
 }
 
@@ -51,6 +54,21 @@ function compressionRatio(uncompressedSize: number, compressedSize: number): num
   return uncompressedSize / Math.max(1, compressedSize);
 }
 
+function shardIndex(filename: string): number | undefined {
+  const match = /^conversations-(\d+)\.json$/.exec(filename);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  return Number.isSafeInteger(value) ? value : undefined;
+}
+
+function summarizeEntry(entry: { filename: string; compressedSize: number; uncompressedSize: number }): ZipEntrySummary {
+  return {
+    filename: entry.filename,
+    compressedSize: entry.compressedSize,
+    uncompressedSize: entry.uncompressedSize
+  };
+}
+
 export async function inspectExportZip(
   file: Blob,
   policy: ZipSafetyPolicy = DEFAULT_ZIP_SAFETY
@@ -64,7 +82,14 @@ export async function inspectExportZip(
       blockingIssues.push({ code: 'TOO_MANY_ENTRIES', detail: String(entries.length) });
     }
 
-    const candidates = entries.filter((entry) => !entry.directory && entry.filename === 'conversations.json');
+    const monolithicCandidates = entries.filter(
+      (entry) => !entry.directory && entry.filename === 'conversations.json'
+    );
+    const shardCandidates = entries
+      .map((entry) => ({ entry, index: entry.directory ? undefined : shardIndex(entry.filename) }))
+      .filter((candidate): candidate is { entry: (typeof entries)[number]; index: number } => candidate.index !== undefined)
+      .sort((left, right) => left.index - right.index || left.entry.filename.localeCompare(right.entry.filename));
+
     for (const entry of entries) {
       if (isUnsafeEntryPath(entry.filename)) {
         blockingIssues.push({ code: 'UNSAFE_ENTRY_PATH', detail: entry.filename });
@@ -74,30 +99,48 @@ export async function inspectExportZip(
       }
     }
 
-    if (candidates.length === 0) blockingIssues.push({ code: 'MISSING_CONVERSATIONS' });
-    if (candidates.length > 1) blockingIssues.push({ code: 'DUPLICATE_CONVERSATIONS' });
+    const duplicateShardName = new Set(shardCandidates.map(({ entry }) => entry.filename)).size !== shardCandidates.length;
+    const duplicateShardIndex = new Set(shardCandidates.map(({ index }) => index)).size !== shardCandidates.length;
+    const ambiguousConversationPayload =
+      monolithicCandidates.length > 1 ||
+      (monolithicCandidates.length > 0 && shardCandidates.length > 0) ||
+      duplicateShardName ||
+      duplicateShardIndex;
 
-    const candidate = candidates.length === 1 ? candidates[0] : undefined;
-    if (candidate && candidate.uncompressedSize > policy.maxConversationBytes) {
-      blockingIssues.push({ code: 'CONVERSATIONS_TOO_LARGE', detail: String(candidate.uncompressedSize) });
+    if (monolithicCandidates.length === 0 && shardCandidates.length === 0) {
+      blockingIssues.push({ code: 'MISSING_CONVERSATIONS' });
     }
+    if (ambiguousConversationPayload) {
+      blockingIssues.push({ code: 'DUPLICATE_CONVERSATIONS' });
+    }
+
+    const selectedEntries = ambiguousConversationPayload
+      ? []
+      : monolithicCandidates.length === 1
+        ? monolithicCandidates
+        : shardCandidates.map(({ entry }) => entry);
+    const totalConversationBytes = selectedEntries.reduce((sum, entry) => sum + entry.uncompressedSize, 0);
+    if (selectedEntries.length > 0 && totalConversationBytes > policy.maxConversationBytes) {
+      blockingIssues.push({ code: 'CONVERSATIONS_TOO_LARGE', detail: String(totalConversationBytes) });
+    }
+
+    const conversationEntries = selectedEntries.map(summarizeEntry);
+    const conversationEntry = monolithicCandidates.length === 1 && !ambiguousConversationPayload
+      ? summarizeEntry(monolithicCandidates[0])
+      : undefined;
 
     return {
       ok: blockingIssues.length === 0,
       entryCount: entries.length,
-      conversationEntry: candidate
-        ? {
-            filename: candidate.filename,
-            compressedSize: candidate.compressedSize,
-            uncompressedSize: candidate.uncompressedSize
-          }
-        : undefined,
+      conversationEntry,
+      conversationEntries,
       blockingIssues
     };
   } catch (error) {
     return {
       ok: false,
       entryCount: 0,
+      conversationEntries: [],
       blockingIssues: [{ code: 'INVALID_ZIP', detail: error instanceof Error ? error.message : 'Unknown ZIP error' }]
     };
   } finally {
