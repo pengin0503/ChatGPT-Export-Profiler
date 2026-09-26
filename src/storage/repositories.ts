@@ -1,5 +1,5 @@
 import { openProfilerDb, PROFILER_DB_NAME } from './db';
-import type { AnalysisRecord, ConversationMetricRecord, ImportCheckpoint } from './db';
+import type { AnalysisRecord, AnalysisStatus, ConversationMetricRecord, ImportCheckpoint } from './db';
 
 export { PROFILER_DB_NAME };
 export type { AnalysisRecord, ConversationMetricRecord, ImportCheckpoint };
@@ -36,6 +36,14 @@ export const analysisRepository = {
     return withDb(async (db) => {
       const records = await db.getAll('analyses');
       return records.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+    });
+  },
+
+  async updateStatus(id: string, status: AnalysisStatus): Promise<void> {
+    await withDb(async (db) => {
+      const record = await db.get('analyses', id);
+      if (!record) return;
+      await db.put('analyses', { ...record, status });
     });
   },
 
