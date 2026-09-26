@@ -1,6 +1,6 @@
 // @vitest-environment node
 import 'fake-indexeddb/auto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import minimal from '../fixtures/minimal-conversations.json';
 import { normalizeConversation } from '../../src/analysis/normalize';
@@ -168,13 +168,8 @@ describe('second-round reliability hardening', () => {
     expect('title' in sanitized.conversations[0]).toBe(false);
   });
 
-  it('deploys Pages only from a successful CI workflow run and its verified SHA', () => {
-    const workflow = readFileSync('.github/workflows/pages.yml', 'utf8');
-    expect(workflow).toContain('workflow_run:');
-    expect(workflow).toContain('workflows: [CI]');
-    expect(workflow).toContain('github.event.workflow_run.conclusion == \'success\'');
-    expect(workflow).toContain('github.event.workflow_run.head_sha');
-    expect(workflow).not.toMatch(/\npush:\s*\n/);
+  it('does not configure GitHub Pages for this private repository', () => {
+    expect(existsSync('.github/workflows/pages.yml')).toBe(false);
   });
 
   it('keeps the app and package release-candidate versions aligned', () => {
