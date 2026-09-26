@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release-rc]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Determine release tag
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            release_tag="$GITHUB_REF_NAME"
+          else
+            release_tag="v1.0.0-rc.1"
+          fi
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run e2e
+      - name: Generate synthetic performance fixture
+        run: npm run make:fixture:1k
+      - name: Performance regression check
+        run: npm run test:performance
+      - name: Build offline package
+        shell: bash
+        run: GITHUB_REF_NAME="$RELEASE_TAG" npm run make:offline
+      - name: Create GitHub Release if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            cat > release-notes.md <<'EOF'
+          This is the iPad validation release candidate for ChatGPT Export Profiler.
+
+          Recommended iPad validation path:
+          1. Open the GitHub Pages deployment in Safari and Orion.
+          2. Import a medium synthetic export and verify portrait/landscape behavior.
+          3. Test background/recovery, export, deletion, and offline/PWA launch.
+          4. Report any device-only issue before the final v1.0.0 release.
+
+          The ZIP asset attached to this release is the same validated static build packaged for local/offline serving. It can be downloaded directly from the GitHub Release page without PowerShell.
+          EOF
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_TAG — iPad validation build" --prerelease --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --generate-notes
+          fi
+      - name: Attach offline package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "$RELEASE_TAG" "artifacts/ChatGPT-Export-Profiler-${RELEASE_TAG#v}-offline.zip" --clobber

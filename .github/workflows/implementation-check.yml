@@ -1,0 +1,40 @@
+name: Implementation Check
+
+on:
+  push:
+    branches:
+      - implementation/v1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit and integration tests
+        run: npm test
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Build offline package
+        run: npm run make:offline
+      - name: Install E2E browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Import, analytics, isolation, offline, iPad, security, and v1 acceptance E2E
+        run: npm run e2e -- tests/e2e/import-flow.spec.ts tests/e2e/analytics-pages.spec.ts tests/e2e/secondary-pages.spec.ts tests/e2e/network-isolation.spec.ts tests/e2e/offline.spec.ts tests/e2e/ipad-layout.spec.ts tests/e2e/security-content.spec.ts tests/e2e/v1-acceptance.spec.ts
+      - name: Generate synthetic 1k performance fixture
+        run: npm run make:fixture:1k
+      - name: Large-fixture performance check
+        run: npm run test:performance
+
+# implementation branch only; replaced by ci.yml in Task 14

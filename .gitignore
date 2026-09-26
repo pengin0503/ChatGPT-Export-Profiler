@@ -1,0 +1,12 @@
+node_modules/
+dist/
+artifacts/
+coverage/
+playwright-report/
+test-results/
+.vite/
+*.log
+*.zip
+.DS_Store
+
+tests/fixtures/generated-*.zip
