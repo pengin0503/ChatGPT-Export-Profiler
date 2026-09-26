@@ -1,0 +1,49 @@
+name: Scale Performance
+
+on:
+  schedule:
+    - cron: '17 18 * * 0'
+  workflow_dispatch:
+    inputs:
+      conversations:
+        description: Synthetic conversation count
+        required: true
+        default: '10000'
+        type: choice
+        options:
+          - '10000'
+          - '50000'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-scale:
+    runs-on: ubuntu-latest
+    env:
+      PERF_CONVERSATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.conversations || '10000' }}
+      PERF_FIXTURE: tests/fixtures/generated-scale.zip
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Generate scaled synthetic fixture
+        shell: bash
+        run: node scripts/generate-large-fixture.mjs --conversations "$PERF_CONVERSATIONS" --output "$PERF_FIXTURE"
+      - name: Configure scale timeout
+        shell: bash
+        run: |
+          if [[ "$PERF_CONVERSATIONS" -ge 50000 ]]; then
+            echo 'PERF_IMPORT_TIMEOUT_MS=600000' >> "$GITHUB_ENV"
+          else
+            echo 'PERF_IMPORT_TIMEOUT_MS=240000' >> "$GITHUB_ENV"
+          fi
+      - name: Run scaled performance regression
+        run: npm run test:performance
