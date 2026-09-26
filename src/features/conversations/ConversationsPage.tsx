@@ -7,10 +7,13 @@ import { ConversationTable } from './ConversationTable';
 
 interface ConversationsPageProps { analysisId: string }
 
+const PAGE_SIZE = 500;
+
 export function ConversationsPage({ analysisId }: ConversationsPageProps) {
   const { t } = useI18n();
   const [rows, setRows] = useState<ConversationMetricRecord[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
   const [modelId, setModelId] = useState('');
   const [sort, setSort] = useState<ConversationSort>('visibleTokens-desc');
   const [webOnly, setWebOnly] = useState(false);
@@ -18,6 +21,11 @@ export function ConversationsPage({ analysisId }: ConversationsPageProps) {
   const [toolsOnly, setToolsOnly] = useState(false);
   const [minTokens, setMinTokens] = useState('');
   const [selected, setSelected] = useState<ConversationMetricRecord | null>(null);
+
+  useEffect(() => {
+    setPage(0);
+    setSelected(null);
+  }, [analysisId, modelId, sort, webOnly, filesOnly, toolsOnly, minTokens]);
 
   useEffect(() => {
     let active = true;
@@ -29,15 +37,24 @@ export function ConversationsPage({ analysisId }: ConversationsPageProps) {
       hasFiles: filesOnly ? true : undefined,
       hasTools: toolsOnly ? true : undefined,
       minTokens: parsedMin !== undefined && Number.isFinite(parsedMin) ? parsedMin : undefined,
-      offset: 0,
-      limit: Number.MAX_SAFE_INTEGER
+      offset: page * PAGE_SIZE,
+      limit: PAGE_SIZE
     }).then((result) => {
       if (!active) return;
+      const lastPage = Math.max(0, Math.ceil(result.total / PAGE_SIZE) - 1);
+      if (page > lastPage) {
+        setPage(lastPage);
+        return;
+      }
       setRows(result.rows);
       setTotal(result.total);
     });
     return () => { active = false; };
-  }, [analysisId, modelId, sort, webOnly, filesOnly, toolsOnly, minTokens]);
+  }, [analysisId, modelId, sort, webOnly, filesOnly, toolsOnly, minTokens, page]);
+
+  const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  const pageCount = Math.max(1, lastPage + 1);
+  const currentPage = Math.min(page, lastPage);
 
   return (
     <section className="analytics-page" aria-labelledby="conversations-heading">
@@ -69,7 +86,18 @@ export function ConversationsPage({ analysisId }: ConversationsPageProps) {
         <label className="check-filter"><input type="checkbox" checked={toolsOnly} onChange={(event) => setToolsOnly(event.target.checked)} /> {t('conversations.tools')}</label>
       </div>
       <div className="conversation-layout">
-        <ConversationTable rows={rows} total={total} onSelect={setSelected} />
+        <div>
+          <ConversationTable rows={rows} total={total} onSelect={setSelected} />
+          {total > PAGE_SIZE ? (
+            <nav className="pagination-controls" aria-label="Conversation pages">
+              <button type="button" className="secondary-action" aria-label="«" disabled={currentPage === 0} onClick={() => setPage(0)}>«</button>
+              <button type="button" className="secondary-action" aria-label="‹" disabled={currentPage === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>‹</button>
+              <span aria-live="polite">{currentPage + 1} / {pageCount}</span>
+              <button type="button" className="secondary-action" aria-label="›" disabled={currentPage >= lastPage} onClick={() => setPage((value) => Math.min(lastPage, value + 1))}>›</button>
+              <button type="button" className="secondary-action" aria-label="»" disabled={currentPage >= lastPage} onClick={() => setPage(lastPage)}>»</button>
+            </nav>
+          ) : null}
+        </div>
         <ConversationDetails row={selected} onClose={() => setSelected(null)} />
       </div>
     </section>
