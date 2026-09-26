@@ -47,7 +47,7 @@ export function exportMarkdown(value: AnalyticsExport): string {
     if (data.cost.scenario) {
       const scenario = data.cost.scenario;
       lines.push(
-        `- Scenario: ${scenario.lowerUsd}–${scenario.upperUsd} (${scenario.provenance})`,
+        `- Scenario: $${scenario.lowerUsd}–$${scenario.upperUsd} (${scenario.provenance})`,
         `- Model: ${markdownCell(scenario.modelId)}`,
         `- Assumptions: cacheRatio: ${scenario.assumptions.cacheRatio}; hiddenInputOverheadRatio: ${scenario.assumptions.hiddenInputOverheadRatio}; reasoningOutputOverheadRatio: ${scenario.assumptions.reasoningOutputOverheadRatio}`
       );
