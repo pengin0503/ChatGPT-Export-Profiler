@@ -43,6 +43,16 @@ function collectIdentifiers(metadata: Record<string, unknown>): string[] {
   return identifiers;
 }
 
+function hasNonEmptyArray(metadata: Record<string, unknown>, key: string): boolean {
+  const value = metadata[key];
+  return Array.isArray(value) && value.length > 0;
+}
+
+function addStructuredEvidence(events: NormalizedToolEvent[], kind: ToolKind, rawType: string): void {
+  if (events.some((event) => event.kind === kind)) return;
+  events.push({ kind, rawType });
+}
+
 export function detectToolEvents(metadata: unknown): NormalizedToolEvent[] {
   if (!isRecord(metadata)) return [];
 
@@ -54,5 +64,16 @@ export function detectToolEvents(metadata: unknown): NormalizedToolEvent[] {
     const kind = TOOL_KIND_BY_RAW[rawType.toLowerCase()] ?? 'unknown';
     events.push({ kind, rawType });
   }
+
+  if (hasNonEmptyArray(metadata, 'search_result_groups')) {
+    addStructuredEvidence(events, 'web-search', 'search_result_groups');
+  }
+  if (hasNonEmptyArray(metadata, 'image_results')) {
+    addStructuredEvidence(events, 'image', 'image_results');
+  }
+  if (hasNonEmptyArray(metadata, 'attachments')) {
+    addStructuredEvidence(events, 'file', 'attachments');
+  }
+
   return events;
 }
