@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ImportController, type WorkerPort } from '../../src/features/import/importController';
 import type { PipelineMessage } from '../../src/import/pipelineProtocol';
-import type { ImportCheckpoint } from '../../src/storage/repositories';
+import type { AnalysisRecord, ImportCheckpoint } from '../../src/storage/repositories';
 import {
   ANALYSIS_SCHEMA_VERSION,
   ANALYZER_VERSION,
@@ -55,14 +55,33 @@ function successfulShardedInspection() {
   };
 }
 
-function dependencies(importWorker = new RecordingWorker(), analysisWorker = new RecordingWorker()) {
+function currentAnalysis(id = 'analysis-resume'): AnalysisRecord {
+  return {
+    id,
+    fingerprint: 'synthetic-fingerprint',
+    createdAt: 1,
+    status: 'running',
+    appVersion: APP_VERSION,
+    schemaVersion: ANALYSIS_SCHEMA_VERSION,
+    analyzerVersion: ANALYZER_VERSION,
+    tokenizerVersion: TOKENIZER_VERSION,
+    pricingDatasetVersion: PRICING_DATASET_VERSION
+  };
+}
+
+function dependencies(
+  importWorker = new RecordingWorker(),
+  analysisWorker = new RecordingWorker(),
+  analysis: AnalysisRecord | undefined = currentAnalysis()
+) {
   return {
     inspectZip: async () => successfulInspection(),
     fingerprintImport: async () => ({ hash: 'synthetic-fingerprint' } as never),
     createImportWorker: () => importWorker,
     createAnalysisWorker: () => analysisWorker,
     createAnalysis: async () => {},
-    updateAnalysisStatus: async () => {}
+    updateAnalysisStatus: async () => {},
+    getAnalysis: async () => analysis
   };
 }
 
@@ -201,7 +220,7 @@ describe('ImportController', () => {
     const importWorker = new RecordingWorker();
     const analysisWorker = new RecordingWorker();
     const controller = new ImportController({
-      ...dependencies(importWorker, analysisWorker),
+      ...dependencies(importWorker, analysisWorker, currentAnalysis('analysis-legacy-resume')),
       fingerprintImport: async () => ({
         hash: 'synthetic-v3-fingerprint',
         legacyHash: 'synthetic-legacy-fingerprint'
@@ -223,5 +242,29 @@ describe('ImportController', () => {
       fingerprint: 'synthetic-legacy-fingerprint'
     }));
     controller.cancel();
+  });
+
+  it('rejects a checkpoint created with stale analyzer semantics instead of mixing versions', async () => {
+    const importWorker = new RecordingWorker();
+    const analysisWorker = new RecordingWorker();
+    const staleAnalysis = {
+      ...currentAnalysis('analysis-stale-resume'),
+      analyzerVersion: Math.max(0, ANALYZER_VERSION - 1),
+      tokenizerVersion: Math.max(0, TOKENIZER_VERSION - 1)
+    };
+    const controller = new ImportController({ ...dependencies(importWorker, analysisWorker, staleAnalysis) });
+    const checkpoint: ImportCheckpoint = {
+      analysisId: 'analysis-stale-resume',
+      fingerprint: 'synthetic-fingerprint',
+      stage: 'aggregation',
+      committedBatches: 2,
+      processedConversations: 100,
+      updatedAt: 789
+    };
+
+    await expect(controller.resume(new Blob(['synthetic ZIP bytes']), checkpoint, { profile: 'standard' }))
+      .rejects.toMatchObject({ code: 'ANALYSIS_VERSION_MISMATCH', messageKey: 'import.analysisVersionMismatch' });
+    expect(importWorker.messages).toHaveLength(0);
+    expect(analysisWorker.messages).toHaveLength(0);
   });
 });
