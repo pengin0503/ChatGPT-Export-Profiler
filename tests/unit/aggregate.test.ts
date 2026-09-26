@@ -65,6 +65,7 @@ describe('createAggregator', () => {
     expect(result.totals.outputMessages).toBe(2);
     expect(result.totals.inputTokens + result.totals.outputTokens).toBe(result.totals.visibleTokens);
     expect(result.totals.visibleTokens).toBeGreaterThan(0);
+    expect(result.tokenizationCoverage).toEqual({ attempted: 5, identified: 5, ratio: 1 });
 
     expect(result.byModel['gpt-6-sol']?.messages).toBe(3);
     expect(result.byModel['gpt-5.6-sol']?.messages).toBe(2);
@@ -111,6 +112,7 @@ describe('createAggregator', () => {
     });
     expect(result.peakDay).toBeNull();
     expect(result.medianMessageTokens).toBe(0);
+    expect(result.tokenizationCoverage).toEqual({ attempted: 0, identified: 0, ratio: null });
     expect(result.conversations).toEqual([]);
   });
 
