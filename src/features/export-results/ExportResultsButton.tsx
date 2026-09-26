@@ -2,17 +2,16 @@ import { useState } from 'react';
 import { calculateHistoricalVisibleCost, type PricingRecord } from '../../analysis/pricing';
 import { loadPricingRecords } from '../../analysis/pricingHistory';
 import { useI18n } from '../../i18n';
-import { getModelMetrics, getOverviewMetrics, listAllConversationMetrics } from '../../storage/analyticsQueries';
+import { forEachConversationMetric, getModelMetrics, getOverviewMetrics } from '../../storage/analyticsQueries';
 import { openProfilerDb } from '../../storage/db';
-import { exportCsv } from './exportCsv';
-import { exportJson, type AnalyticsExport, type AnalyticsExportScenario } from './exportJson';
-import { exportMarkdown } from './exportMarkdown';
+import { type AnalyticsExport, type AnalyticsExportScenario } from './exportJson';
+import { buildStreamingAnalyticsBlob, type StreamExportFormat } from './streamExport';
 
 interface ExportResultsButtonProps {
   analysisId: string;
 }
 
-type ExportFormat = 'json' | 'csv' | 'md';
+type ExportFormat = StreamExportFormat;
 
 async function getStoredScenario(analysisId: string): Promise<unknown> {
   const db = await openProfilerDb();
@@ -58,13 +57,10 @@ function exportScenario(value: unknown): AnalyticsExportScenario | undefined {
   };
 }
 
-// This pure helper is intentionally exported from the component module for deterministic export tests.
-// eslint-disable-next-line react-refresh/only-export-components
-export async function buildAnalyticsExport(analysisId: string): Promise<AnalyticsExport> {
-  const [overview, models, conversations, pricing, storedScenario] = await Promise.all([
+export async function buildAnalyticsExportBase(analysisId: string): Promise<AnalyticsExport> {
+  const [overview, models, pricing, storedScenario] = await Promise.all([
     getOverviewMetrics(analysisId),
     getModelMetrics(analysisId),
-    listAllConversationMetrics(analysisId, { sort: 'newest' }),
     loadPricingRecords(),
     getStoredScenario(analysisId)
   ]);
@@ -102,12 +98,7 @@ export async function buildAnalyticsExport(analysisId: string): Promise<Analytic
       conversations: model.conversations,
       rawAliases: [...model.rawAliases]
     })),
-    conversations: conversations.map((conversation) => ({
-      title: conversation.title,
-      visibleTokens: conversation.visibleTokens,
-      messages: conversation.messages,
-      modelIds: [...conversation.modelIds]
-    })),
+    conversations: [],
     cost: {
       visibleApiEquivalentUsd,
       visibleProvenance: 'calculated',
@@ -125,35 +116,48 @@ export async function buildAnalyticsExport(analysisId: string): Promise<Analytic
   };
 }
 
-function download(content: string, filename: string, mimeType: string): void {
-  const blob = new Blob([content], { type: mimeType });
+// Full materialization is retained only as a deterministic test/programmatic helper.
+// The interactive download path below streams conversation rows through bounded string chunks.
+// eslint-disable-next-line react-refresh/only-export-components
+export async function buildAnalyticsExport(analysisId: string): Promise<AnalyticsExport> {
+  const report = await buildAnalyticsExportBase(analysisId);
+  const conversations: AnalyticsExport['conversations'] = [];
+  await forEachConversationMetric(analysisId, (conversation) => {
+    conversations.push({
+      title: conversation.title,
+      visibleTokens: conversation.visibleTokens,
+      messages: conversation.messages,
+      modelIds: [...conversation.modelIds]
+    });
+  });
+  return { ...report, conversations };
+}
+
+function download(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
   anchor.rel = 'noopener';
   anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function serialize(format: ExportFormat, data: AnalyticsExport): { content: string; mimeType: string } {
-  if (format === 'json') return { content: exportJson(data), mimeType: 'application/json;charset=utf-8' };
-  if (format === 'csv') return { content: exportCsv(data), mimeType: 'text/csv;charset=utf-8' };
-  return { content: exportMarkdown(data), mimeType: 'text/markdown;charset=utf-8' };
+  globalThis.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export function ExportResultsButton({ analysisId }: ExportResultsButtonProps) {
   const { t } = useI18n();
   const [busy, setBusy] = useState<ExportFormat>();
   const [error, setError] = useState<string>();
+  const [includeTitles, setIncludeTitles] = useState(false);
 
   const run = async (format: ExportFormat): Promise<void> => {
     setBusy(format);
     setError(undefined);
     try {
-      const data = await buildAnalyticsExport(analysisId);
-      const serialized = serialize(format, data);
-      download(serialized.content, `chatgpt-export-profiler-${analysisId.slice(0, 8)}.${format}`, serialized.mimeType);
+      const base = await buildAnalyticsExportBase(analysisId);
+      const blob = await buildStreamingAnalyticsBlob(base, analysisId, format, {
+        includeConversationTitles: includeTitles
+      });
+      download(blob, `chatgpt-export-profiler-${analysisId.slice(0, 8)}.${format}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('export.failed'));
     } finally {
@@ -163,6 +167,10 @@ export function ExportResultsButton({ analysisId }: ExportResultsButtonProps) {
 
   return (
     <div className="export-actions" aria-label={t('export.aria')}>
+      <label className="check-filter" title={t('export.includeTitlesDetail')}>
+        <input type="checkbox" checked={includeTitles} onChange={(event) => setIncludeTitles(event.target.checked)} />
+        {t('export.includeTitles')}
+      </label>
       <button type="button" className="secondary-action" disabled={busy !== undefined} onClick={() => void run('json')}>
         {busy === 'json' ? t('export.exporting') : t('export.json')}
       </button>
