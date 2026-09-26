@@ -1,7 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 export const PROFILER_DB_NAME = 'chatgpt-export-profiler';
-export const PROFILER_DB_VERSION = 1;
+export const PROFILER_DB_VERSION = 2;
 
 export type AnalysisStatus = 'running' | 'complete' | 'cancelled' | 'failed';
 
@@ -102,7 +102,13 @@ export interface ProfilerDbSchema extends DBSchema {
   conversationMetrics: {
     key: [string, string];
     value: ConversationMetricRecord;
-    indexes: { 'by-analysis': string };
+    indexes: {
+      'by-analysis': string;
+      'by-analysis-visible-tokens': [string, number];
+      'by-analysis-input-tokens': [string, number];
+      'by-analysis-output-tokens': [string, number];
+      'by-analysis-messages': [string, number];
+    };
   };
   modelMetrics: {
     key: [string, string];
@@ -143,7 +149,7 @@ export interface ProfilerDbSchema extends DBSchema {
 
 export async function openProfilerDb(): Promise<IDBPDatabase<ProfilerDbSchema>> {
   return openDB<ProfilerDbSchema>(PROFILER_DB_NAME, PROFILER_DB_VERSION, {
-    upgrade(db) {
+    upgrade(db, _oldVersion, _newVersion, transaction) {
       if (!db.objectStoreNames.contains('analyses')) db.createObjectStore('analyses', { keyPath: 'id' });
 
       if (!db.objectStoreNames.contains('conversations')) {
@@ -151,9 +157,23 @@ export async function openProfilerDb(): Promise<IDBPDatabase<ProfilerDbSchema>> 
         store.createIndex('by-analysis', 'analysisId');
       }
 
-      if (!db.objectStoreNames.contains('conversationMetrics')) {
-        const store = db.createObjectStore('conversationMetrics', { keyPath: ['analysisId', 'conversationId'] });
-        store.createIndex('by-analysis', 'analysisId');
+      const conversationMetrics = db.objectStoreNames.contains('conversationMetrics')
+        ? transaction.objectStore('conversationMetrics')
+        : db.createObjectStore('conversationMetrics', { keyPath: ['analysisId', 'conversationId'] });
+      if (!conversationMetrics.indexNames.contains('by-analysis')) {
+        conversationMetrics.createIndex('by-analysis', 'analysisId');
+      }
+      if (!conversationMetrics.indexNames.contains('by-analysis-visible-tokens')) {
+        conversationMetrics.createIndex('by-analysis-visible-tokens', ['analysisId', 'visibleTokens']);
+      }
+      if (!conversationMetrics.indexNames.contains('by-analysis-input-tokens')) {
+        conversationMetrics.createIndex('by-analysis-input-tokens', ['analysisId', 'inputTokens']);
+      }
+      if (!conversationMetrics.indexNames.contains('by-analysis-output-tokens')) {
+        conversationMetrics.createIndex('by-analysis-output-tokens', ['analysisId', 'outputTokens']);
+      }
+      if (!conversationMetrics.indexNames.contains('by-analysis-messages')) {
+        conversationMetrics.createIndex('by-analysis-messages', ['analysisId', 'messages']);
       }
 
       for (const name of ['modelMetrics', 'timelineMetrics', 'toolMetrics'] as const) {
