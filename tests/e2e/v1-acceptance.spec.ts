@@ -68,6 +68,20 @@ const conversations = [
   }
 ];
 
+async function setAcceptanceZip(page: Page, buffer: Buffer): Promise<void> {
+  await page.getByLabel('Choose ChatGPT export ZIP').evaluate((element, bytes) => {
+    const input = element as HTMLInputElement;
+    const file = new File([new Uint8Array(bytes)], 'v1-acceptance-synthetic.zip', {
+      type: 'application/zip',
+      lastModified: 1_797_100_000_000
+    });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, [...buffer]);
+}
+
 async function expectDownload(page: Page, buttonName: string): Promise<Download> {
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: buttonName }).click();
@@ -88,12 +102,7 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
   });
 
   await page.goto('/');
-  await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({
-    name: 'v1-acceptance-synthetic.zip',
-    mimeType: 'application/zip',
-    lastModified: 1_797_100_000_000,
-    buffer
-  });
+  await setAcceptanceZip(page, buffer);
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/2 conversations/i)).toBeVisible();
 
@@ -156,12 +165,7 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
   await expect(page.getByRole('list', { name: 'Local pricing history' })).toContainText('gpt-6-sol · 2026-09-01');
 
   await page.getByRole('button', { name: 'Import' }).click();
-  await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles({
-    name: 'v1-acceptance-synthetic.zip',
-    mimeType: 'application/zip',
-    lastModified: 1_797_100_000_000,
-    buffer
-  });
+  await setAcceptanceZip(page, buffer);
   await expect(page.getByText(/already exists locally/i)).toBeVisible();
   await page.getByRole('button', { name: 'Open existing' }).click();
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
