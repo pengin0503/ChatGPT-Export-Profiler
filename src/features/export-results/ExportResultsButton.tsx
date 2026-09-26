@@ -57,7 +57,7 @@ function exportScenario(value: unknown): AnalyticsExportScenario | undefined {
   };
 }
 
-export async function buildAnalyticsExportBase(analysisId: string): Promise<AnalyticsExport> {
+async function buildAnalyticsExportBase(analysisId: string): Promise<AnalyticsExport> {
   const [overview, models, pricing, storedScenario] = await Promise.all([
     getOverviewMetrics(analysisId),
     getModelMetrics(analysisId),
