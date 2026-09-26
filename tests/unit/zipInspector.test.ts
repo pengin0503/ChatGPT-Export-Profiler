@@ -26,6 +26,27 @@ describe('inspectExportZip', () => {
     expect(result.blockingIssues).toEqual([]);
   });
 
+  it('blocks a synthetic sharded export with a missing shard index', async () => {
+    const file = await makeZip([
+      { name: 'conversations-001.json', text: '[]' },
+      { name: 'conversations-003.json', text: '[]' }
+    ]);
+    const result = await inspectExportZip(file);
+    expect(result.ok).toBe(false);
+    expect(result.blockingIssues.map((issue) => issue.code)).toContain('INCOMPLETE_CONVERSATION_SHARDS');
+  });
+
+  it('blocks a manifest whose declared conversation shards do not match the archive', async () => {
+    const file = await makeZip([
+      { name: 'conversations-001.json', text: '[]' },
+      { name: 'conversations-002.json', text: '[]' },
+      { name: 'export_manifest.json', text: JSON.stringify({ logical_files: { 'conversations.json': { sharded: true, shard_count: 2, files: ['conversations-001.json', 'conversations-003.json'] } } }) }
+    ]);
+    const result = await inspectExportZip(file);
+    expect(result.ok).toBe(false);
+    expect(result.blockingIssues.map((issue) => issue.code)).toContain('MANIFEST_SHARD_MISMATCH');
+  });
+
   it('blocks mixed monolithic and sharded conversation payloads as ambiguous', async () => {
     const file = await makeZip([
       { name: 'conversations.json', text: '[]' },
