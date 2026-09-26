@@ -4,6 +4,8 @@ import {
   type AnalyticsExportPrivacyOptions
 } from './exportJson';
 
+export const ANALYTICS_MARKDOWN_FOOTER = '> Export contains analytics read models only; raw conversation bodies are excluded by construction.';
+
 export function markdownCell(value: string | number | null | undefined): string {
   return String(value ?? '—')
     .replace(/&/g, '&amp;')
@@ -43,9 +45,11 @@ export function exportMarkdown(value: AnalyticsExport, options: AnalyticsExportP
     lines.push(`| ${markdownCell(model.modelId)} | ${model.visibleTokens} | ${model.inputTokens} | ${model.outputTokens} | ${model.messages} | ${model.conversations} | ${markdownCell(model.rawAliases.join(', '))} |`);
   }
 
-  lines.push('', '## Conversations', '', '| Title | Visible tokens | Messages | Models |', '| --- | ---: | ---: | --- |');
-  for (const conversation of data.conversations) {
-    lines.push(`| ${markdownCell(conversation.title ?? '')} | ${conversation.visibleTokens} | ${conversation.messages} | ${markdownCell(conversation.modelIds.join(', '))} |`);
+  if (data.conversations.length > 0) {
+    lines.push('', '## Conversations', '', '| Title | Visible tokens | Messages | Models |', '| --- | ---: | ---: | --- |');
+    for (const conversation of data.conversations) {
+      lines.push(`| ${markdownCell(conversation.title ?? '')} | ${conversation.visibleTokens} | ${conversation.messages} | ${markdownCell(conversation.modelIds.join(', '))} |`);
+    }
   }
 
   if (data.cost) {
@@ -79,6 +83,6 @@ export function exportMarkdown(value: AnalyticsExport, options: AnalyticsExportP
     }
   }
 
-  lines.push('', '> Export contains analytics read models only; raw conversation bodies are excluded by construction.', '');
+  lines.push('', ANALYTICS_MARKDOWN_FOOTER, '');
   return lines.join('\n');
 }
