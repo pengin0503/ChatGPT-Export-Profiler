@@ -98,7 +98,7 @@ A difference between two totals is therefore evidence of a measurement differenc
 
 Import identity uses a local SHA-256 fingerprint over bounded samples plus export-container metadata. Fingerprint version 3 excludes filesystem `lastModified` from the primary content identity so copying or re-downloading identical bytes does not by itself make the export appear unrelated. The sampler covers multiple evenly spaced regions of larger files while remaining bounded.
 
-For migration compatibility, the application can also compute the previous fingerprint form locally and use it only to recognize analyses/checkpoints created by older versions. Fingerprints are recovery/duplicate-detection aids rather than cryptographic proof that every byte of a large archive is identical.
+For migration compatibility, the application can also compute the previous fingerprint form locally and use it to recognize analyses/checkpoints created with an older fingerprint format. A paused checkpoint is resumed only when its stored analysis-schema, analyzer, and tokenizer versions match the current semantics; otherwise the application requires a fresh import rather than mixing incompatible metrics in one analysis. Fingerprints are recovery/duplicate-detection aids rather than cryptographic proof that every byte of a large archive is identical.
 
 ## Versioning and reproducibility
 
