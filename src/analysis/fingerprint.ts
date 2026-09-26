@@ -2,17 +2,20 @@ import type { ZipInspection } from '../import/zipInspector';
 
 const SAMPLE_BYTES = 64 * 1024;
 
+interface FingerprintConversationEntry {
+  filename: string;
+  compressedSize: number;
+  uncompressedSize: number;
+}
+
 export interface ImportFingerprint {
   hash: string;
   algorithm: 'SHA-256';
   fileSize: number;
   lastModified?: number;
   entryCount: number;
-  conversationEntry?: {
-    filename: string;
-    compressedSize: number;
-    uncompressedSize: number;
-  };
+  conversationEntry?: FingerprintConversationEntry;
+  conversationEntries?: FingerprintConversationEntry[];
   sampledBytes: number;
 }
 
@@ -59,25 +62,43 @@ function toHex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)].map((value) => value.toString(16).padStart(2, '0')).join('');
 }
 
+function copyConversationEntry(entry: FingerprintConversationEntry): FingerprintConversationEntry {
+  return {
+    filename: entry.filename,
+    compressedSize: entry.compressedSize,
+    uncompressedSize: entry.uncompressedSize
+  };
+}
+
 export async function fingerprintImport(file: Blob, inspection: ZipInspection): Promise<ImportFingerprint> {
   const source = file as BlobWithModified;
   const samples = await readSamples(file);
   const conversationEntry = inspection.conversationEntry
-    ? {
-        filename: inspection.conversationEntry.filename,
-        compressedSize: inspection.conversationEntry.compressedSize,
-        uncompressedSize: inspection.conversationEntry.uncompressedSize
-      }
+    ? copyConversationEntry(inspection.conversationEntry)
+    : undefined;
+  const conversationEntries = !conversationEntry && inspection.conversationEntries?.length
+    ? inspection.conversationEntries.map(copyConversationEntry)
     : undefined;
 
-  const metadata = {
-    version: 1,
-    fileSize: file.size,
-    lastModified: typeof source.lastModified === 'number' ? source.lastModified : null,
-    entryCount: inspection.entryCount,
-    conversationEntry: conversationEntry ?? null,
-    samples: samples.map((sample) => ({ offset: sample.offset, length: sample.bytes.byteLength }))
-  };
+  // Preserve the existing monolithic fingerprint format exactly. Sharded exports
+  // use a new metadata version because there was no legacy single entry to hash.
+  const metadata = conversationEntries
+    ? {
+        version: 2,
+        fileSize: file.size,
+        lastModified: typeof source.lastModified === 'number' ? source.lastModified : null,
+        entryCount: inspection.entryCount,
+        conversationEntries,
+        samples: samples.map((sample) => ({ offset: sample.offset, length: sample.bytes.byteLength }))
+      }
+    : {
+        version: 1,
+        fileSize: file.size,
+        lastModified: typeof source.lastModified === 'number' ? source.lastModified : null,
+        entryCount: inspection.entryCount,
+        conversationEntry: conversationEntry ?? null,
+        samples: samples.map((sample) => ({ offset: sample.offset, length: sample.bytes.byteLength }))
+      };
 
   const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata));
   const digestInput = concatenate([metadataBytes, ...samples.map((sample) => sample.bytes)]);
@@ -90,6 +111,7 @@ export async function fingerprintImport(file: Blob, inspection: ZipInspection): 
     lastModified: typeof source.lastModified === 'number' ? source.lastModified : undefined,
     entryCount: inspection.entryCount,
     conversationEntry,
+    conversationEntries,
     sampledBytes: samples.reduce((sum, sample) => sum + sample.bytes.byteLength, 0)
   };
 }
