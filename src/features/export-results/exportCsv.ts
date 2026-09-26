@@ -1,8 +1,22 @@
 import { sanitizeAnalyticsExport, type AnalyticsExport } from './exportJson';
 
+function startsWithFormulaAfterIgnoredPrefix(text: string): boolean {
+  let index = 0;
+  while (index < text.length) {
+    const code = text.charCodeAt(index);
+    if (code <= 0x20 || (code >= 0x7f && code <= 0x9f)) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  const first = text[index];
+  return first === '=' || first === '+' || first === '-' || first === '@';
+}
+
 function csvCell(value: string | number | null | undefined): string {
   let text = value === null || value === undefined ? '' : String(value);
-  if (/^[\u0000-\u0020\u007f-\u009f]*[=+\-@]/.test(text)) text = `'${text}`;
+  if (startsWithFormulaAfterIgnoredPrefix(text)) text = `'${text}`;
   if (/[",\r\n]/.test(text)) text = `"${text.replace(/"/g, '""')}"`;
   return text;
 }
