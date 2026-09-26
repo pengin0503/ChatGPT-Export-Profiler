@@ -106,7 +106,9 @@ export function DataQualityPage({ analysisId }: { analysisId: string }) {
               <h3>{t('quality.coverage')}</h3>
               <p>{t('quality.modelIdentification')}: {percent(view.modelIdentification)} ({view.modelIdentification.identified}/{view.modelIdentification.attempted})</p>
               <p>{t('quality.tokenization')}: {percent(view.tokenization)} ({view.tokenization.identified}/{view.tokenization.attempted})</p>
-              <p className="muted-copy">confidence: exact {view.tokenization.exact} · family {view.tokenization.family} · fallback {view.tokenization.fallback}</p>
+              <p className="muted-copy">
+                {t('quality.tokenConfidence')}: {t('quality.confidenceExact')} {view.tokenization.exact} · {t('quality.confidenceFamily')} {view.tokenization.family} · {t('quality.confidenceFallback')} {view.tokenization.fallback}
+              </p>
             </section>
             <section className="panel"><h3>{t('quality.unknownModels')}</h3>{view.unknownModels.length ? <ul className="compact-list">{view.unknownModels.map((model) => <li key={model}>{model}</li>)}</ul> : <p className="muted-copy">{t('quality.noneDetected')}</p>}</section>
             <section className="panel"><h3>{t('quality.unknownSchemaKeys')}</h3>{view.unknownSchemaKeys.length ? <ul className="compact-list">{view.unknownSchemaKeys.map((key) => <li key={key}>{key}</li>)}</ul> : <p className="muted-copy">{t('quality.noneDetected')}</p>}</section>
