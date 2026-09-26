@@ -177,4 +177,13 @@ describe('second-round reliability hardening', () => {
     expect(packageJson.version).toBe('1.0.0-rc.2');
     expect(APP_VERSION).toBe(packageJson.version);
   });
+
+  it('supports an auditable release-request marker while preserving tag releases', () => {
+    const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
+    expect(workflow).toContain("tags:\n      - 'v*'");
+    expect(workflow).toContain('branches:\n      - main');
+    expect(workflow).toContain("paths:\n      - '.github/release-requests/**'");
+    expect(workflow).toContain('Resolve release tag');
+    expect(existsSync('.github/release-requests/v1.0.0-rc.2')).toBe(true);
+  });
 });
