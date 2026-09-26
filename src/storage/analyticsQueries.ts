@@ -63,13 +63,6 @@ export interface StoredTimelineMetric {
   visibleTokens: number;
 }
 
-type IndexedConversationSort =
-  | 'visibleTokens-desc'
-  | 'visibleTokens-asc'
-  | 'inputTokens-desc'
-  | 'outputTokens-desc'
-  | 'messages-desc';
-
 function toSeconds(timestamp: number): number {
   return timestamp < 100_000_000_000 ? timestamp : timestamp / 1000;
 }
@@ -204,18 +197,7 @@ function retainBoundedSorted(
   if (rows.length > maximum) rows.pop();
 }
 
-function indexedSort(sort: ConversationSort): IndexedConversationSort | undefined {
-  if (
-    sort === 'visibleTokens-desc' ||
-    sort === 'visibleTokens-asc' ||
-    sort === 'inputTokens-desc' ||
-    sort === 'outputTokens-desc' ||
-    sort === 'messages-desc'
-  ) return sort;
-  return undefined;
-}
-
-function hasPostIndexFilters(options: ConversationQueryOptions): boolean {
+function hasConversationFilters(options: ConversationQueryOptions): boolean {
   return Boolean(
     options.range ||
     options.modelId ||
@@ -227,44 +209,28 @@ function hasPostIndexFilters(options: ConversationQueryOptions): boolean {
   );
 }
 
-async function queryIndexedConversationPage(
+async function countConversationRows(
   analysisId: string,
-  options: ConversationQueryOptions,
-  sort: IndexedConversationSort
-): Promise<ConversationQueryResult> {
-  const offset = Math.max(0, options.offset ?? 0);
-  const limit = Math.max(0, options.limit ?? 100);
-  const indexConfig = {
-    'visibleTokens-desc': ['by-analysis-visible-tokens', 'prev'],
-    'visibleTokens-asc': ['by-analysis-visible-tokens', 'next'],
-    'inputTokens-desc': ['by-analysis-input-tokens', 'prev'],
-    'outputTokens-desc': ['by-analysis-output-tokens', 'prev'],
-    'messages-desc': ['by-analysis-messages', 'prev']
-  } as const;
-  const [indexName, direction] = indexConfig[sort];
+  options: ConversationQueryOptions
+): Promise<number> {
   const db = await openProfilerDb();
   try {
     const tx = db.transaction('conversationMetrics', 'readonly');
-    const index = tx.store.index(indexName);
-    const range = IDBKeyRange.bound(
-      [analysisId, -Number.MAX_VALUE],
-      [analysisId, Number.MAX_VALUE]
-    );
-    const total = await index.count(range);
-    if (limit === 0 || offset >= total) {
+    const index = tx.store.index('by-analysis');
+    if (!hasConversationFilters(options)) {
+      const total = await index.count(analysisId);
       await tx.done;
-      return { total, rows: [] };
+      return total;
     }
 
-    let cursor = await index.openCursor(range, direction);
-    if (cursor && offset > 0) cursor = await cursor.advance(offset);
-    const rows: ConversationMetricRecord[] = [];
-    while (cursor && rows.length < limit) {
-      rows.push(cursor.value);
+    let total = 0;
+    let cursor = await index.openCursor(analysisId);
+    while (cursor) {
+      if (projectAndFilterConversation(cursor.value, options)) total += 1;
       cursor = await cursor.continue();
     }
     await tx.done;
-    return { total, rows };
+    return total;
   } finally {
     db.close();
   }
@@ -285,10 +251,20 @@ async function scanConversationPage(
 ): Promise<ConversationQueryResult> {
   const offset = Math.max(0, options.offset ?? 0);
   const limit = Math.max(0, options.limit ?? 100);
-  const maximum = Math.min(Number.MAX_SAFE_INTEGER, offset + limit);
+  const total = await countConversationRows(analysisId, options);
+  if (limit === 0 || offset >= total) return { total, rows: [] };
+
+  const pageLength = Math.min(limit, total - offset);
   const compare = rowComparator(options.sort ?? 'newest');
+  const headSize = Math.min(Number.MAX_SAFE_INTEGER, offset + pageLength);
+  const tailSize = total - offset;
+  const retainTail = tailSize < headSize;
+  const maximum = retainTail ? tailSize : headSize;
+  const retentionCompare = retainTail
+    ? (a: ConversationMetricRecord, b: ConversationMetricRecord) => compare(b, a)
+    : compare;
   const rows: ConversationMetricRecord[] = [];
-  let total = 0;
+
   const db = await openProfilerDb();
   try {
     const tx = db.transaction('conversationMetrics', 'readonly');
@@ -296,28 +272,25 @@ async function scanConversationPage(
     let cursor = await index.openCursor(analysisId);
     while (cursor) {
       const row = projectAndFilterConversation(cursor.value, options);
-      if (row) {
-        total += 1;
-        retainBoundedSorted(rows, row, compare, maximum);
-      }
+      if (row) retainBoundedSorted(rows, row, retentionCompare, maximum);
       cursor = await cursor.continue();
     }
     await tx.done;
   } finally {
     db.close();
   }
-  return { total, rows: rows.slice(offset, offset + limit) };
+
+  if (retainTail) {
+    rows.sort(compare);
+    return { total, rows: rows.slice(0, pageLength) };
+  }
+  return { total, rows: rows.slice(offset, offset + pageLength) };
 }
 
 export async function queryConversationMetrics(
   analysisId: string,
   options: ConversationQueryOptions = {}
 ): Promise<ConversationQueryResult> {
-  const sort = options.sort ?? 'newest';
-  const indexed = indexedSort(sort);
-  if (indexed && !hasPostIndexFilters(options)) {
-    return queryIndexedConversationPage(analysisId, options, indexed);
-  }
   return scanConversationPage(analysisId, options);
 }
 
