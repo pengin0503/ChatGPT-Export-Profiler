@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useI18n } from '../../i18n';
 import { openProfilerDb } from '../../storage/db';
 
 interface ToolRow {
@@ -17,6 +18,7 @@ function asToolRow(value: Record<string, unknown>): ToolRow | undefined {
 }
 
 export function ToolsPage({ analysisId }: { analysisId: string }) {
+  const { t } = useI18n();
   const [rows, setRows] = useState<ToolRow[]>([]);
 
   useEffect(() => {
@@ -43,13 +45,13 @@ export function ToolsPage({ analysisId }: { analysisId: string }) {
 
   return (
     <section className="analytics-page" aria-labelledby="tools-heading">
-      <p className="eyebrow">DETECTED EXPORT METADATA</p>
-      <h2 id="tools-heading">Tools / Web</h2>
-      <p className="muted-copy">Known and unknown raw tool identifiers are preserved. Counts describe export-visible events only.</p>
+      <p className="eyebrow">{t('tools.eyebrow')}</p>
+      <h2 id="tools-heading">{t('tools.heading')}</h2>
+      <p className="muted-copy">{t('tools.description')}</p>
       {rows.length ? (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Kind</th><th>Raw type</th><th>Events</th></tr></thead>
+            <thead><tr><th>{t('tools.kind')}</th><th>{t('tools.rawType')}</th><th>{t('tools.events')}</th></tr></thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={`${row.kind}:${row.rawType}`}>
@@ -59,7 +61,7 @@ export function ToolsPage({ analysisId }: { analysisId: string }) {
             </tbody>
           </table>
         </div>
-      ) : <p className="muted-copy">No export-visible tool events were detected.</p>}
+      ) : <p className="muted-copy">{t('tools.empty')}</p>}
     </section>
   );
 }
