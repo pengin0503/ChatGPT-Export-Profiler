@@ -62,6 +62,7 @@ export interface CompleteMessage {
   type: 'COMPLETE';
   analysisId: string;
   source: 'import' | 'analysis';
+  quality?: QualitySnapshot;
 }
 
 export interface CancelMessage {
