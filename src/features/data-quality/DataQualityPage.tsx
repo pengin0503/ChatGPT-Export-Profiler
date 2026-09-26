@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { resolveModel } from '../../analysis/modelRegistry';
+import { useI18n } from '../../i18n';
 import { getModelMetrics } from '../../storage/analyticsQueries';
 import { openProfilerDb } from '../../storage/db';
 import { loadModelAliases } from '../settings/preferences';
@@ -39,6 +40,7 @@ function percent(value: CoverageView): string {
 }
 
 export function DataQualityPage({ analysisId }: { analysisId: string }) {
+  const { t } = useI18n();
   const [view, setView] = useState<QualityView>();
 
   useEffect(() => {
@@ -83,22 +85,26 @@ export function DataQualityPage({ analysisId }: { analysisId: string }) {
 
   return (
     <section className="analytics-page" aria-labelledby="quality-heading">
-      <p className="eyebrow">ANALYSIS RELIABILITY</p>
-      <h2 id="quality-heading">Data quality</h2>
-      {!view ? <p className="muted-copy">Loading quality metrics…</p> : (
+      <p className="eyebrow">{t('quality.eyebrow')}</p>
+      <h2 id="quality-heading">{t('nav.dataQuality')}</h2>
+      {!view ? <p className="muted-copy">{t('quality.loading')}</p> : (
         <>
           <div className="metric-grid">
-            <article className="metric-card"><span className="metric-label">Fatal</span><strong className="metric-value">{view.fatal}</strong></article>
-            <article className="metric-card"><span className="metric-label">Recoverable</span><strong className="metric-value">{view.recoverable}</strong></article>
-            <article className="metric-card"><span className="metric-label">Warnings</span><strong className="metric-value">{view.warning}</strong></article>
-            <article className="metric-card"><span className="metric-label">Unknown schema</span><strong className="metric-value">{view.unknownSchema}</strong></article>
+            <article className="metric-card"><span className="metric-label">{t('quality.fatal')}</span><strong className="metric-value">{view.fatal}</strong></article>
+            <article className="metric-card"><span className="metric-label">{t('quality.recoverable')}</span><strong className="metric-value">{view.recoverable}</strong></article>
+            <article className="metric-card"><span className="metric-label">{t('quality.warnings')}</span><strong className="metric-value">{view.warning}</strong></article>
+            <article className="metric-card"><span className="metric-label">{t('quality.unknownSchema')}</span><strong className="metric-value">{view.unknownSchema}</strong></article>
           </div>
           <div className="panel-grid">
-            <section className="panel"><h3>Coverage</h3><p>Model identification: {percent(view.modelIdentification)} ({view.modelIdentification.identified}/{view.modelIdentification.attempted})</p><p>Tokenization: {percent(view.tokenization)} ({view.tokenization.identified}/{view.tokenization.attempted})</p></section>
-            <section className="panel"><h3>Unknown models</h3>{view.unknownModels.length ? <ul className="compact-list">{view.unknownModels.map((model) => <li key={model}>{model}</li>)}</ul> : <p className="muted-copy">None detected.</p>}</section>
-            <section className="panel"><h3>Unknown schema keys</h3>{view.unknownSchemaKeys.length ? <ul className="compact-list">{view.unknownSchemaKeys.map((key) => <li key={key}>{key}</li>)}</ul> : <p className="muted-copy">None detected.</p>}</section>
+            <section className="panel">
+              <h3>{t('quality.coverage')}</h3>
+              <p>{t('quality.modelIdentification')}: {percent(view.modelIdentification)} ({view.modelIdentification.identified}/{view.modelIdentification.attempted})</p>
+              <p>{t('quality.tokenization')}: {percent(view.tokenization)} ({view.tokenization.identified}/{view.tokenization.attempted})</p>
+            </section>
+            <section className="panel"><h3>{t('quality.unknownModels')}</h3>{view.unknownModels.length ? <ul className="compact-list">{view.unknownModels.map((model) => <li key={model}>{model}</li>)}</ul> : <p className="muted-copy">{t('quality.noneDetected')}</p>}</section>
+            <section className="panel"><h3>{t('quality.unknownSchemaKeys')}</h3>{view.unknownSchemaKeys.length ? <ul className="compact-list">{view.unknownSchemaKeys.map((key) => <li key={key}>{key}</li>)}</ul> : <p className="muted-copy">{t('quality.noneDetected')}</p>}</section>
           </div>
-          {view.issues.length ? <div className="table-wrap"><table><thead><tr><th>Severity</th><th>Code</th></tr></thead><tbody>{view.issues.map((issue, index) => <tr key={`${issue.code}:${index}`}><td>{issue.severity}</td><td>{issue.code}</td></tr>)}</tbody></table></div> : null}
+          {view.issues.length ? <div className="table-wrap"><table><thead><tr><th>{t('quality.severity')}</th><th>{t('quality.code')}</th></tr></thead><tbody>{view.issues.map((issue, index) => <tr key={`${issue.code}:${index}`}><td>{issue.severity}</td><td>{issue.code}</td></tr>)}</tbody></table></div> : null}
         </>
       )}
     </section>
