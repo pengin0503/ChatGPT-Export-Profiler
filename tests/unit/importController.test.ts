@@ -31,6 +31,19 @@ function successfulInspection() {
     ok: true as const,
     entryCount: 1,
     conversationEntry: { filename: 'conversations.json', compressedSize: 10, uncompressedSize: 20 },
+    conversationEntries: [{ filename: 'conversations.json', compressedSize: 10, uncompressedSize: 20 }],
+    blockingIssues: []
+  };
+}
+
+function successfulShardedInspection() {
+  return {
+    ok: true as const,
+    entryCount: 3,
+    conversationEntries: [
+      { filename: 'conversations-001.json', compressedSize: 10, uncompressedSize: 20 },
+      { filename: 'conversations-002.json', compressedSize: 11, uncompressedSize: 21 }
+    ],
     blockingIssues: []
   };
 }
@@ -47,6 +60,21 @@ function dependencies(importWorker = new RecordingWorker(), analysisWorker = new
 }
 
 describe('ImportController', () => {
+  it('starts an import for a valid sharded conversation inspection without a legacy single entry', async () => {
+    const importWorker = new RecordingWorker();
+    const analysisWorker = new RecordingWorker();
+    const controller = new ImportController({
+      ...dependencies(importWorker, analysisWorker),
+      inspectZip: async () => successfulShardedInspection()
+    });
+
+    await expect(
+      controller.start(new Blob(['synthetic ZIP bytes']), { profile: 'standard', analysisId: 'analysis-sharded-test' })
+    ).resolves.toMatchObject({ analysisId: 'analysis-sharded-test' });
+    expect(importWorker.messages).toContainEqual(expect.objectContaining({ type: 'START_IMPORT' }));
+    controller.cancel();
+  });
+
   it('sends the selected ZIP safety policy to the import worker', async () => {
     const policy = { maxEntries: 100_000, maxConversationBytes: 16 * 1024 ** 3, maxCompressionRatio: 500 };
     const importWorker = new RecordingWorker();
