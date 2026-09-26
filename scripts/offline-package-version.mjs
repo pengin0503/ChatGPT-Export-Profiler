@@ -4,7 +4,7 @@ export function offlinePackageVersion(packageVersion, releaseTag) {
 
   const version = releaseTag.slice(1);
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-    throw new Error(\`Invalid release tag version: \${releaseTag}\`);
+    throw new Error(`Invalid release tag version: ${releaseTag}`);
   }
   return version;
 }
