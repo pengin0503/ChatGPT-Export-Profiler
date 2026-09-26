@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
-import { afterEach, cleanup, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nContext, t as translate } from '../../src/i18n';
 import { OverviewPage } from '../../src/features/overview/OverviewPage';
