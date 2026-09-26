@@ -61,6 +61,7 @@ export interface AggregationResult {
   };
   peakDay: ({ key: string } & AggregateBucket) | null;
   medianMessageTokens: number;
+  tokenizationCoverage: { attempted: number; identified: number; ratio: number | null };
   conversations: ConversationMetric[];
 }
 
@@ -206,6 +207,8 @@ export function createAggregator() {
   };
   const tokenHistogram = new Map<number, number>();
   const conversationMetrics: ConversationMetric[] = [];
+  let tokenizationAttempted = 0;
+  let tokenizationIdentified = 0;
 
   function updateBucket(kind: BucketKind, key: string, conversationId: string, tokenCount: number): void {
     let bucket = buckets[kind].get(key);
@@ -239,11 +242,13 @@ export function createAggregator() {
 
     for (const message of conversation.messages) {
       const inferredModel = inferredModels.get(message.messageId);
+      tokenizationAttempted += 1;
       const tokenResult = await countVisibleTokens({
         text: message.text,
         canonicalModelId: message.canonicalModelId ?? inferredModel,
         rawModelSlug: message.rawModelSlug
       });
+      tokenizationIdentified += 1;
       const tokenCount = tokenResult.count;
       const kind = roleClass(message.role);
       totals.messages += 1;
@@ -347,6 +352,11 @@ export function createAggregator() {
       buckets: finalizedBuckets,
       peakDay,
       medianMessageTokens: medianFromHistogram(tokenHistogram, totals.messages),
+      tokenizationCoverage: {
+        attempted: tokenizationAttempted,
+        identified: tokenizationIdentified,
+        ratio: tokenizationAttempted === 0 ? null : tokenizationIdentified / tokenizationAttempted
+      },
       conversations: conversationMetrics.map((value) => ({ ...value, modelIds: [...value.modelIds] }))
     };
   }
