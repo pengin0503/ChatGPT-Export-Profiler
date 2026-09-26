@@ -164,10 +164,6 @@ function rowComparator(sort: ConversationSort): (a: ConversationMetricRecord, b:
   return (a, b) => compare(a, b) || a.conversationId.localeCompare(b.conversationId);
 }
 
-function sortRows(rows: ConversationMetricRecord[], sort: ConversationSort): void {
-  rows.sort(rowComparator(sort));
-}
-
 function projectAndFilterConversation(
   source: ConversationMetricRecord,
   options: ConversationQueryOptions
