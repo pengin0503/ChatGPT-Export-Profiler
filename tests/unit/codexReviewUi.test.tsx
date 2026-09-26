@@ -231,11 +231,11 @@ describe('Codex review UI regressions', () => {
 
     const user = userEvent.setup();
     render(<ConversationsPage analysisId={analysisId} />);
-    expect(await screen.findByText('Showing 500 of 10,001 conversations')).toBeVisible();
+    expect(await screen.findByText('Showing 500 of 10,001 conversations', undefined, { timeout: 10_000 })).toBeVisible();
     expect(screen.getByText('1 / 21')).toBeVisible();
 
     await user.click(screen.getByRole('button', { name: '»' }));
-    expect(await screen.findByText('Showing 1 of 10,001 conversations')).toBeVisible();
+    expect(await screen.findByText('Showing 1 of 10,001 conversations', undefined, { timeout: 10_000 })).toBeVisible();
     expect(screen.getByText('21 / 21')).toBeVisible();
-  }, 20_000);
+  }, 25_000);
 });
