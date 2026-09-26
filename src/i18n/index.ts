@@ -15,6 +15,12 @@ export function t(key: TranslationKey, locale: Locale = detectLocale()): string 
   return dictionaries[locale][key] ?? en[key];
 }
 
+export function formatMessage(message: string, values: Record<string, string | number>): string {
+  return message.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
+  );
+}
+
 export function isTranslationKey(value: string): value is TranslationKey {
   return Object.prototype.hasOwnProperty.call(en, value);
 }
