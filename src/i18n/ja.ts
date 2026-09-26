@@ -15,6 +15,7 @@ export const ja: Record<TranslationKey, string> = {
   'import.safetyBlocked': 'ZIPはローカル安全検査を通過しませんでした。',
   'import.failed': '読み込みを完了できませんでした。',
   'import.fingerprintMismatch': '選択したZIPは一時停止中の読み込みと一致しません。再開するには元のエクスポートZIPを選択してください。',
+  'import.analysisVersionMismatch': '一時停止中の解析は古いアナライザーまたはトークナイザーで作成されています。互換性のない指標を混在させないため、新規読み込みを開始してください。',
   'import.zipSafetyBlocked': '選択したZIPは設定されたローカル安全制限によって拒否されました。',
   'import.streamFailed': 'エクスポートを最後まで読み取れませんでした。ZIPまたはconversations JSONが破損している可能性があります。',
   'import.analysisFailed': 'エクスポートの処理中にローカル解析が失敗しました。',
