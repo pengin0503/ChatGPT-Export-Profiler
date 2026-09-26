@@ -141,7 +141,7 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
 
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
-  await page.getByLabel('Model ID').fill('gpt-6-sol');
+  await page.getByLabel('Model ID', { exact: true }).fill('gpt-6-sol');
   await page.getByLabel('Effective from').fill('2026-09-01');
   await page.getByLabel('Input per million').fill('1.25');
   await page.getByLabel('Cached input per million').fill('0.25');
