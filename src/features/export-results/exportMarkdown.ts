@@ -1,6 +1,10 @@
-import { sanitizeAnalyticsExport, type AnalyticsExport } from './exportJson';
+import {
+  sanitizeAnalyticsExport,
+  type AnalyticsExport,
+  type AnalyticsExportPrivacyOptions
+} from './exportJson';
 
-function markdownCell(value: string | number | null | undefined): string {
+export function markdownCell(value: string | number | null | undefined): string {
   return String(value ?? '—')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -12,8 +16,8 @@ function markdownCell(value: string | number | null | undefined): string {
     .replace(/\r?\n/g, '<br>');
 }
 
-export function exportMarkdown(value: AnalyticsExport): string {
-  const data = sanitizeAnalyticsExport(value);
+export function exportMarkdown(value: AnalyticsExport, options: AnalyticsExportPrivacyOptions = {}): string {
+  const data = sanitizeAnalyticsExport(value, options);
   const lines: string[] = [
     '# ChatGPT Export Profiler analytics report',
     '',
@@ -41,7 +45,7 @@ export function exportMarkdown(value: AnalyticsExport): string {
 
   lines.push('', '## Conversations', '', '| Title | Visible tokens | Messages | Models |', '| --- | ---: | ---: | --- |');
   for (const conversation of data.conversations) {
-    lines.push(`| ${markdownCell(conversation.title)} | ${conversation.visibleTokens} | ${conversation.messages} | ${markdownCell(conversation.modelIds.join(', '))} |`);
+    lines.push(`| ${markdownCell(conversation.title ?? '')} | ${conversation.visibleTokens} | ${conversation.messages} | ${markdownCell(conversation.modelIds.join(', '))} |`);
   }
 
   if (data.cost) {
