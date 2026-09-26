@@ -145,7 +145,7 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
   await page.getByLabel('Effective from').fill('2026-09-01');
   await page.getByLabel('Input per million', { exact: true }).fill('1.25');
   await page.getByLabel('Cached input per million').fill('0.25');
-  await page.getByLabel('Output per million').fill('5.00');
+  await page.getByLabel('Output per million', { exact: true }).fill('5.00');
   await page.getByRole('button', { name: 'Save local override' }).click();
   await expect(page.getByRole('status')).toHaveText(/saved local override/i);
   await expect(page.getByRole('list', { name: 'Local pricing history' })).toContainText('gpt-6-sol · 2026-09-01');
