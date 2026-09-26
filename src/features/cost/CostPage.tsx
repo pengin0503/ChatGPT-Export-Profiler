@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { calculateHistoricalVisibleCost, calculateScenarioCost, type PricingRecord } from '../../analysis/pricing';
+import { loadPricingRecords } from '../../analysis/pricingHistory';
 import { MetricBadge } from '../../components/MetricBadge';
 import { BUILT_IN_PRICING_V1 } from '../../data/pricing.v1';
-import { openProfilerDb } from '../../storage/db';
 import { getModelMetrics, type StoredModelMetric } from '../../storage/analyticsQueries';
+import { openProfilerDb } from '../../storage/db';
 import { CostScenarioEditor, type CostScenarioRequest } from './CostScenarioEditor';
-import { loadPricingRecords } from '../../analysis/pricingHistory';
 
 interface CostPageProps {
   analysisId: string;
@@ -27,6 +27,47 @@ function money(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 6 }).format(value);
 }
 
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function parseStoredScenario(value: unknown): ScenarioView | undefined {
+  const profile = objectValue(value);
+  const request = objectValue(profile?.request);
+  const assumptions = objectValue(request?.assumptions ?? profile?.assumptions);
+  if (
+    typeof profile?.lower !== 'number' ||
+    typeof profile.upper !== 'number' ||
+    typeof request?.replacementModelId !== 'string' ||
+    typeof assumptions?.cacheRatio !== 'number' ||
+    typeof assumptions.hiddenInputOverheadRatio !== 'number' ||
+    typeof assumptions.reasoningOutputOverheadRatio !== 'number'
+  ) return undefined;
+  return {
+    lower: profile.lower,
+    upper: profile.upper,
+    request: {
+      replacementModelId: request.replacementModelId,
+      assumptions: {
+        cacheRatio: assumptions.cacheRatio,
+        hiddenInputOverheadRatio: assumptions.hiddenInputOverheadRatio,
+        reasoningOutputOverheadRatio: assumptions.reasoningOutputOverheadRatio
+      }
+    }
+  };
+}
+
+async function loadStoredScenario(analysisId: string): Promise<ScenarioView | undefined> {
+  const db = await openProfilerDb();
+  try {
+    return parseStoredScenario((await db.get('costProfiles', `scenario:${analysisId}`))?.value);
+  } finally {
+    db.close();
+  }
+}
+
 export function CostPage({ analysisId }: CostPageProps) {
   const [models, setModels] = useState<StoredModelMetric[]>([]);
   const [pricing, setPricing] = useState<PricingRecord[]>([...BUILT_IN_PRICING_V1]);
@@ -36,11 +77,12 @@ export function CostPage({ analysisId }: CostPageProps) {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([getModelMetrics(analysisId), loadPricingRecords()])
-      .then(([modelRows, pricingRows]) => {
+    void Promise.all([getModelMetrics(analysisId), loadPricingRecords(), loadStoredScenario(analysisId)])
+      .then(([modelRows, pricingRows, storedScenario]) => {
         if (!active) return;
         setModels(modelRows);
         setPricing(pricingRows);
+        setScenario(storedScenario);
         setLoaded(true);
       })
       .catch((error: unknown) => {

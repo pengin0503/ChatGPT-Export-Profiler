@@ -58,7 +58,9 @@ export const analysisRepository = {
           'timelineMetrics',
           'toolMetrics',
           'dataQuality',
-          'checkpoints'
+          'checkpoints',
+          'costProfiles',
+          'settings'
         ],
         'readwrite'
       );
@@ -90,6 +92,8 @@ export const analysisRepository = {
 
       await tx.objectStore('dataQuality').delete(id);
       await tx.objectStore('checkpoints').delete(id);
+      await tx.objectStore('costProfiles').delete(`scenario:${id}`);
+      await tx.objectStore('settings').delete(`comparison:${id}`);
       await tx.objectStore('analyses').delete(id);
       await tx.done;
     });

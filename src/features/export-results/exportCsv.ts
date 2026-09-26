@@ -2,7 +2,7 @@ import { sanitizeAnalyticsExport, type AnalyticsExport } from './exportJson';
 
 function csvCell(value: string | number | null | undefined): string {
   let text = value === null || value === undefined ? '' : String(value);
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  if (/^[\u0000-\u0020\u007f-\u009f]*[=+\-@]/.test(text)) text = `'${text}`;
   if (/[",\r\n]/.test(text)) text = `"${text.replace(/"/g, '""')}"`;
   return text;
 }

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import type { ConversationMetricRecord } from '../../storage/db';
+import { useI18n } from '../../i18n';
 import { queryConversationMetrics, type ConversationSort } from '../../storage/analyticsQueries';
+import type { ConversationMetricRecord } from '../../storage/db';
 import { ConversationDetails } from './ConversationDetails';
 import { ConversationTable } from './ConversationTable';
 
 interface ConversationsPageProps { analysisId: string }
 
 export function ConversationsPage({ analysisId }: ConversationsPageProps) {
+  const { t } = useI18n();
   const [rows, setRows] = useState<ConversationMetricRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [modelId, setModelId] = useState('');
@@ -28,7 +30,7 @@ export function ConversationsPage({ analysisId }: ConversationsPageProps) {
       hasTools: toolsOnly ? true : undefined,
       minTokens: parsedMin !== undefined && Number.isFinite(parsedMin) ? parsedMin : undefined,
       offset: 0,
-      limit: 10_000
+      limit: Number.MAX_SAFE_INTEGER
     }).then((result) => {
       if (!active) return;
       setRows(result.rows);
@@ -40,7 +42,7 @@ export function ConversationsPage({ analysisId }: ConversationsPageProps) {
   return (
     <section className="analytics-page" aria-labelledby="conversations-heading">
       <p className="eyebrow">DERIVED METRICS ONLY</p>
-      <h2 id="conversations-heading">Conversations</h2>
+      <h2 id="conversations-heading">{t('nav.conversations')}</h2>
       <div className="filter-row wrap">
         <label className="filter-control"><span>Model</span><input aria-label="Conversation model filter" value={modelId} onChange={(event) => setModelId(event.target.value)} placeholder="gpt-6-sol" /></label>
         <label className="filter-control"><span>Minimum tokens</span><input aria-label="Minimum tokens" inputMode="numeric" value={minTokens} onChange={(event) => setMinTokens(event.target.value)} /></label>

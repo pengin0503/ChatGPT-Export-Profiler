@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { resolveModel } from '../../analysis/modelRegistry';
 import { getModelMetrics } from '../../storage/analyticsQueries';
 import { openProfilerDb } from '../../storage/db';
+import { loadModelAliases } from '../settings/preferences';
 
 interface CoverageView {
   attempted: number;
@@ -46,8 +47,9 @@ export function DataQualityPage({ analysisId }: { analysisId: string }) {
       openProfilerDb().then(async (db) => {
         try { return await db.get('dataQuality', analysisId); } finally { db.close(); }
       }),
-      getModelMetrics(analysisId)
-    ]).then(([qualityRecord, models]) => {
+      getModelMetrics(analysisId),
+      loadModelAliases()
+    ]).then(([qualityRecord, models, modelAliases]) => {
       if (!active) return;
       const value = qualityRecord?.value ?? {};
       const coverage = typeof value.coverage === 'object' && value.coverage !== null ? value.coverage as Record<string, unknown> : {};
@@ -59,8 +61,9 @@ export function DataQualityPage({ analysisId }: { analysisId: string }) {
       const unknownSchemaKeys = Array.isArray(value.unknownSchemaKeys)
         ? value.unknownSchemaKeys.filter((item): item is string => typeof item === 'string')
         : [];
+      const localAliasTargets = new Set(Object.values(modelAliases));
       const unknownModels = models
-        .filter((model) => resolveModel(model.modelId).confidence === 'unknown')
+        .filter((model) => !localAliasTargets.has(model.modelId) && resolveModel(model.modelId, modelAliases).confidence === 'unknown')
         .map((model) => model.modelId)
         .sort();
       setView({

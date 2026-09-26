@@ -39,9 +39,13 @@ export function App() {
   const [activePage, setActivePage] = useState<ActivePage>('import');
   const [completed, setCompleted] = useState<CompletedAnalysis>();
   const importSession = useImportSession();
-  const protectedAnalysisId = importSession.state.status === 'storage-pressure'
-    ? importSession.state.checkpoint.analysisId
-    : undefined;
+  const protectedAnalysisId = (() => {
+    const state = importSession.state;
+    if (state.status === 'running') return state.analysisId;
+    if (state.status === 'storage-pressure' || state.status === 'recoverable') return state.checkpoint.analysisId;
+    if (state.status === 'cancelled') return state.checkpoint?.analysisId;
+    return undefined;
+  })();
 
   const handleComplete = (analysisId: string, summary: ImportSummary) => {
     setCompleted({ analysisId, summary });

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { calculateHistoricalVisibleCost, type PricingRecord } from '../../analysis/pricing';
 import { loadPricingRecords } from '../../analysis/pricingHistory';
+import { getModelMetrics, getOverviewMetrics, listAllConversationMetrics } from '../../storage/analyticsQueries';
 import { openProfilerDb } from '../../storage/db';
-import { getModelMetrics, getOverviewMetrics, queryConversationMetrics } from '../../storage/analyticsQueries';
 import { exportCsv } from './exportCsv';
 import { exportJson, type AnalyticsExport, type AnalyticsExportScenario } from './exportJson';
 import { exportMarkdown } from './exportMarkdown';
@@ -12,17 +12,6 @@ interface ExportResultsButtonProps {
 }
 
 type ExportFormat = 'json' | 'csv' | 'md';
-
-async function allConversationRows(analysisId: string) {
-  const pageSize = 500;
-  const first = await queryConversationMetrics(analysisId, { sort: 'newest', offset: 0, limit: pageSize });
-  const rows = [...first.rows];
-  for (let offset = rows.length; offset < first.total; offset += pageSize) {
-    const page = await queryConversationMetrics(analysisId, { sort: 'newest', offset, limit: pageSize });
-    rows.push(...page.rows);
-  }
-  return rows;
-}
 
 async function getStoredScenario(analysisId: string): Promise<unknown> {
   const db = await openProfilerDb();
@@ -72,7 +61,7 @@ export async function buildAnalyticsExport(analysisId: string): Promise<Analytic
   const [overview, models, conversations, pricing, storedScenario] = await Promise.all([
     getOverviewMetrics(analysisId),
     getModelMetrics(analysisId),
-    allConversationRows(analysisId),
+    listAllConversationMetrics(analysisId, { sort: 'newest' }),
     loadPricingRecords(),
     getStoredScenario(analysisId)
   ]);

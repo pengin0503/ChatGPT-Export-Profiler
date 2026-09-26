@@ -15,6 +15,10 @@ export function t(key: TranslationKey, locale: Locale = detectLocale()): string 
   return dictionaries[locale][key] ?? en[key];
 }
 
+export function isTranslationKey(value: string): value is TranslationKey {
+  return Object.prototype.hasOwnProperty.call(en, value);
+}
+
 export interface I18nValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;

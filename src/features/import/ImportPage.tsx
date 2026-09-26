@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ChangeEvent } from 'react';
 import { StoragePressureNotice } from '../../components/StoragePressureNotice';
-import { useI18n } from '../../i18n';
+import { isTranslationKey, useI18n } from '../../i18n';
 import { ImportProgress } from './ImportProgress';
 import { RecoveryPrompt } from './RecoveryPrompt';
 import {
@@ -79,7 +79,7 @@ export function ImportPage({ session, onComplete, onManageStorage }: ImportPageP
         <section className="import-state-card import-error" role="alert">
           <p className="eyebrow">IMPORT BLOCKED</p>
           <h2>{model.state.code === 'ZIP_SAFETY_BLOCKED' ? t('import.safetyBlocked') : t('import.failed')}</h2>
-          <p>{model.state.messageKey}</p>
+          <p>{isTranslationKey(model.state.messageKey) ? t(model.state.messageKey) : t('import.failed')}</p>
         </section>
       ) : null}
 

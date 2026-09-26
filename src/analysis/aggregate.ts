@@ -33,6 +33,15 @@ export interface ModelMetric {
   usageByDay: Record<string, { inputTokens: number; outputTokens: number }>;
 }
 
+export interface ConversationDailyUsage {
+  messages: number;
+  visibleTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  otherTokens: number;
+  modelIds: string[];
+}
+
 export interface ConversationMetric {
   id: string;
   title: string;
@@ -47,6 +56,7 @@ export interface ConversationMetric {
   hasWeb: boolean;
   hasFiles: boolean;
   hasTools: boolean;
+  usageByDay: Record<string, ConversationDailyUsage>;
 }
 
 export interface AggregationResult {
@@ -235,7 +245,8 @@ export function createAggregator() {
       modelIds: [],
       hasWeb: false,
       hasFiles: false,
-      hasTools: false
+      hasTools: false,
+      usageByDay: {}
     };
     const modelIds = new Set<string>();
     const inferredModels = inferTurnModels(conversation.messages);
@@ -286,6 +297,22 @@ export function createAggregator() {
       updateRange(model, message.createdAt);
 
       const keys = message.createdAt === undefined ? undefined : timeKeys(message.createdAt);
+      if (keys) {
+        const daily = summary.usageByDay[keys.day] ?? {
+          messages: 0,
+          visibleTokens: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          otherTokens: 0,
+          modelIds: []
+        };
+        daily.messages += 1;
+        daily.visibleTokens += tokenCount;
+        daily[`${kind}Tokens`] += tokenCount;
+        if (!daily.modelIds.includes(key)) daily.modelIds.push(key);
+        summary.usageByDay[keys.day] = daily;
+      }
+
       if (keys && kind !== 'other') {
         const usage = model.usageByDay[keys.day] ?? { inputTokens: 0, outputTokens: 0 };
         if (kind === 'input') usage.inputTokens += tokenCount;
@@ -305,6 +332,7 @@ export function createAggregator() {
     }
 
     summary.modelIds = [...modelIds].sort();
+    for (const daily of Object.values(summary.usageByDay)) daily.modelIds.sort();
     updateRange(summary, conversation.createdAt);
     updateRange(summary, conversation.updatedAt);
     conversationMetrics.push(summary);
@@ -357,7 +385,13 @@ export function createAggregator() {
         identified: tokenizationIdentified,
         ratio: tokenizationAttempted === 0 ? null : tokenizationIdentified / tokenizationAttempted
       },
-      conversations: conversationMetrics.map((value) => ({ ...value, modelIds: [...value.modelIds] }))
+      conversations: conversationMetrics.map((value) => ({
+        ...value,
+        modelIds: [...value.modelIds],
+        usageByDay: Object.fromEntries(
+          Object.entries(value.usageByDay).map(([day, usage]) => [day, { ...usage, modelIds: [...usage.modelIds] }])
+        )
+      }))
     };
   }
 

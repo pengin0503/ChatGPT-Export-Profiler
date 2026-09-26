@@ -2,7 +2,11 @@ import { sanitizeAnalyticsExport, type AnalyticsExport } from './exportJson';
 
 function markdownCell(value: string | number | null | undefined): string {
   return String(value ?? '—')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
     .replace(/\\/g, '\\\\')
+    .replace(/([\[\]()])/g, '\\$1')
     .replace(/\|/g, '\\|')
     .replace(/\r?\n/g, '<br>');
 }

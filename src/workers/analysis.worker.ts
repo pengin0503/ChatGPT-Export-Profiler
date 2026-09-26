@@ -116,7 +116,10 @@ async function persistBatch(message: BatchMessage): Promise<ImportCheckpoint> {
     modelIds: [...conversation.modelIds],
     hasWeb: conversation.hasWeb,
     hasFiles: conversation.hasFiles,
-    hasTools: conversation.hasTools
+    hasTools: conversation.hasTools,
+    usageByDay: Object.fromEntries(
+      Object.entries(conversation.usageByDay).map(([day, usage]) => [day, { ...usage, modelIds: [...usage.modelIds] }])
+    )
   }));
 
   const modelRecords: AnalysisOwnedRecord[] = Object.values(result.byModel).map((model) => ({

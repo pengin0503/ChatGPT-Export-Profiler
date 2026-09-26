@@ -25,6 +25,15 @@ export interface StoredConversationRecord {
   updatedAt?: number;
 }
 
+export interface DailyConversationUsage {
+  messages: number;
+  visibleTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  otherTokens: number;
+  modelIds: string[];
+}
+
 export interface ConversationMetricRecord {
   analysisId: string;
   conversationId: string;
@@ -40,6 +49,7 @@ export interface ConversationMetricRecord {
   hasWeb: boolean;
   hasFiles: boolean;
   hasTools: boolean;
+  usageByDay?: Record<string, DailyConversationUsage>;
 }
 
 export interface AnalysisOwnedRecord {
