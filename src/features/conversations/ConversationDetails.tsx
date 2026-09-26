@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n';
 import type { ConversationMetricRecord } from '../../storage/db';
 
 interface ConversationDetailsProps { row: ConversationMetricRecord | null; onClose(): void }
@@ -9,20 +10,27 @@ function formatDate(timestamp?: number): string {
 }
 
 export function ConversationDetails({ row, onClose }: ConversationDetailsProps) {
+  const { t } = useI18n();
   if (!row) return null;
+  const signals = [
+    row.hasWeb && t('conversations.web'),
+    row.hasFiles && t('conversations.files'),
+    row.hasTools && t('conversations.tools')
+  ].filter(Boolean).join(', ') || t('conversations.none');
+
   return (
-    <aside className="details-panel" aria-label="Conversation details">
-      <div className="section-heading-row"><h3>{row.title}</h3><button type="button" onClick={onClose}>Close</button></div>
+    <aside className="details-panel" aria-label={t('conversations.detailsAria')}>
+      <div className="section-heading-row"><h3>{row.title}</h3><button type="button" onClick={onClose}>{t('conversations.close')}</button></div>
       <dl className="details-list">
-        <div><dt>Conversation ID</dt><dd>{row.conversationId}</dd></div>
-        <div><dt>Date range</dt><dd>{formatDate(row.firstTimestamp)} – {formatDate(row.lastTimestamp)}</dd></div>
-        <div><dt>Models</dt><dd>{row.modelIds.join(', ') || 'unknown'}</dd></div>
-        <div><dt>Messages</dt><dd>{row.messages.toLocaleString()}</dd></div>
-        <div><dt>Visible tokens</dt><dd>{row.visibleTokens.toLocaleString()}</dd></div>
-        <div><dt>Input / output</dt><dd>{row.inputTokens.toLocaleString()} / {row.outputTokens.toLocaleString()}</dd></div>
-        <div><dt>Signals</dt><dd>{[row.hasWeb && 'web', row.hasFiles && 'files', row.hasTools && 'tools'].filter(Boolean).join(', ') || 'none'}</dd></div>
+        <div><dt>{t('conversations.id')}</dt><dd>{row.conversationId}</dd></div>
+        <div><dt>{t('conversations.dateRange')}</dt><dd>{formatDate(row.firstTimestamp)} – {formatDate(row.lastTimestamp)}</dd></div>
+        <div><dt>{t('conversations.models')}</dt><dd>{row.modelIds.join(', ') || t('conversations.unknown')}</dd></div>
+        <div><dt>{t('conversations.messages')}</dt><dd>{row.messages.toLocaleString()}</dd></div>
+        <div><dt>{t('conversations.visibleTokens')}</dt><dd>{row.visibleTokens.toLocaleString()}</dd></div>
+        <div><dt>{t('conversations.inputOutput')}</dt><dd>{row.inputTokens.toLocaleString()} / {row.outputTokens.toLocaleString()}</dd></div>
+        <div><dt>{t('conversations.signals')}</dt><dd>{signals}</dd></div>
       </dl>
-      <p className="data-note">Full conversation text is not persisted and is not available from this analytics view.</p>
+      <p className="data-note">{t('conversations.detailsNote')}</p>
     </aside>
   );
 }
