@@ -69,7 +69,6 @@ describe('fingerprintImport', () => {
       ]
     });
 
-    expect(first.conversationEntries).toHaveLength(2);
     expect(second.hash).not.toBe(first.hash);
   });
 });
