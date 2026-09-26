@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { calculateHistoricalVisibleCost, type PricingRecord } from '../../analysis/pricing';
 import { loadPricingRecords } from '../../analysis/pricingHistory';
+import { useI18n } from '../../i18n';
 import { getModelMetrics, getOverviewMetrics, listAllConversationMetrics } from '../../storage/analyticsQueries';
 import { openProfilerDb } from '../../storage/db';
 import { exportCsv } from './exportCsv';
@@ -140,6 +141,7 @@ function serialize(format: ExportFormat, data: AnalyticsExport): { content: stri
 }
 
 export function ExportResultsButton({ analysisId }: ExportResultsButtonProps) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState<ExportFormat>();
   const [error, setError] = useState<string>();
 
@@ -151,22 +153,22 @@ export function ExportResultsButton({ analysisId }: ExportResultsButtonProps) {
       const serialized = serialize(format, data);
       download(serialized.content, `chatgpt-export-profiler-${analysisId.slice(0, 8)}.${format}`, serialized.mimeType);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Unable to export analytics.');
+      setError(caught instanceof Error ? caught.message : t('export.failed'));
     } finally {
       setBusy(undefined);
     }
   };
 
   return (
-    <div className="export-actions" aria-label="Export analytics">
+    <div className="export-actions" aria-label={t('export.aria')}>
       <button type="button" className="secondary-action" disabled={busy !== undefined} onClick={() => void run('json')}>
-        {busy === 'json' ? 'Exporting…' : 'Export JSON'}
+        {busy === 'json' ? t('export.exporting') : t('export.json')}
       </button>
       <button type="button" className="secondary-action" disabled={busy !== undefined} onClick={() => void run('csv')}>
-        {busy === 'csv' ? 'Exporting…' : 'Export CSV'}
+        {busy === 'csv' ? t('export.exporting') : t('export.csv')}
       </button>
       <button type="button" className="secondary-action" disabled={busy !== undefined} onClick={() => void run('md')}>
-        {busy === 'md' ? 'Exporting…' : 'Export Markdown'}
+        {busy === 'md' ? t('export.exporting') : t('export.markdown')}
       </button>
       {error ? <span role="alert" className="inline-error">{error}</span> : null}
     </div>
