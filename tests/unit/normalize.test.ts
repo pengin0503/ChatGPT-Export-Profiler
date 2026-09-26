@@ -69,6 +69,80 @@ describe('normalizeConversation', () => {
     expect(quality.snapshot().issues.some((issue) => issue.code === 'message-unsupported-content')).toBe(true);
   });
 
+  it('recognizes exported reasoning containers without counting hidden reasoning as visible text or damage', () => {
+    const quality = new QualityCollector();
+    const raw = structuredClone(minimal) as unknown as Record<string, unknown>;
+    const mapping = raw.mapping as Record<string, Record<string, unknown>>;
+    const userMessage = mapping['user-node'].message as Record<string, unknown>;
+    const assistantMessage = mapping['assistant-node'].message as Record<string, unknown>;
+    userMessage.content = {
+      content_type: 'thoughts',
+      source_analysis_msg_id: 'synthetic-analysis',
+      thoughts: [{ summary: 'Synthetic summary', content: 'Synthetic non-visible reasoning', chunks: [], finished: true }]
+    };
+    assistantMessage.content = { content_type: 'reasoning_recap', content: 'synthetic-recap' };
+
+    const conversation = normalizeConversation(raw, quality)!;
+    expect(conversation.messages.map((message) => message.text)).toEqual(['', '']);
+    expect(quality.snapshot().issues.some((issue) => issue.code === 'message-unsupported-content')).toBe(false);
+  });
+
+  it('treats currently observed structural fields as recognized schema without copying their values', () => {
+    const quality = new QualityCollector();
+    const raw = structuredClone(minimal) as unknown as Record<string, unknown>;
+    Object.assign(raw, {
+      is_do_not_remember: false,
+      is_read_only: null,
+      is_study_mode: true,
+      memory_scope: 'synthetic-scope',
+      pinned_time: null
+    });
+    const mapping = raw.mapping as Record<string, Record<string, unknown>>;
+    const assistantMessage = mapping['assistant-node'].message as Record<string, unknown>;
+    assistantMessage.metadata = {
+      ...(assistantMessage.metadata as Record<string, unknown>),
+      async_task_title: 'Synthetic task',
+      branching_from_conversation_title: 'Synthetic branch',
+      code_blocks: {},
+      conversation_context_citation_metadata: [],
+      error_metadata: {},
+      image_results: [],
+      is_async_task_result_message: false,
+      message_locale: 'xx-TEST',
+      parent_id: 'synthetic-parent',
+      search_result_groups: [],
+      serialization_metadata: {},
+      tool_icons: [],
+      view_state: {}
+    };
+
+    const conversation = normalizeConversation(raw, quality)!;
+    const snapshot = quality.snapshot();
+    const observedConversationFields = ['is_do_not_remember', 'is_read_only', 'is_study_mode', 'memory_scope', 'pinned_time'];
+    const observedMetadataFields = [
+      'async_task_title',
+      'branching_from_conversation_title',
+      'code_blocks',
+      'conversation_context_citation_metadata',
+      'error_metadata',
+      'image_results',
+      'is_async_task_result_message',
+      'message_locale',
+      'parent_id',
+      'search_result_groups',
+      'serialization_metadata',
+      'tool_icons',
+      'view_state'
+    ];
+
+    for (const key of [...observedConversationFields, ...observedMetadataFields]) {
+      expect(snapshot.unknownSchemaKeys).not.toContain(key);
+    }
+    for (const key of observedMetadataFields) {
+      expect(conversation.messages[1].unknownMetadataKeys).not.toContain(key);
+    }
+  });
+
   it('records unknown conversation-level fields as schema drift', () => {
     const quality = new QualityCollector();
     const raw = structuredClone(minimal) as unknown as Record<string, unknown>;

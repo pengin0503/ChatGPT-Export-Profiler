@@ -24,7 +24,19 @@ function getConversationId(raw: Record<string, unknown>): string | undefined {
 }
 
 function extractText(content: unknown, quality: QualityCollector): string {
-  if (!isRecord(content) || !Array.isArray(content.parts)) {
+  if (!isRecord(content)) {
+    quality.addRecoverable('message-unsupported-content');
+    return '';
+  }
+
+  const contentType = asString(content.content_type);
+  if (contentType === 'thoughts' || contentType === 'reasoning_recap') {
+    // These are recognized reasoning containers, not user-visible message body text.
+    // Preserve visible-token accounting by intentionally excluding their payloads.
+    return '';
+  }
+
+  if (!Array.isArray(content.parts)) {
     quality.addRecoverable('message-unsupported-content');
     return '';
   }
@@ -80,7 +92,12 @@ const KNOWN_CONVERSATION_KEYS = new Set([
   'conversation_origin',
   'moderation_results',
   'plugin_ids',
-  'voice'
+  'voice',
+  'is_do_not_remember',
+  'is_read_only',
+  'is_study_mode',
+  'memory_scope',
+  'pinned_time'
 ]);
 
 const KNOWN_METADATA_KEYS = new Set([
@@ -97,7 +114,20 @@ const KNOWN_METADATA_KEYS = new Set([
   'message_type',
   'finish_details',
   'citations',
-  'content_references'
+  'content_references',
+  'async_task_title',
+  'branching_from_conversation_title',
+  'code_blocks',
+  'conversation_context_citation_metadata',
+  'error_metadata',
+  'image_results',
+  'is_async_task_result_message',
+  'message_locale',
+  'parent_id',
+  'search_result_groups',
+  'serialization_metadata',
+  'tool_icons',
+  'view_state'
 ]);
 
 function unknownConversationKeys(raw: Record<string, unknown>, quality: QualityCollector): void {

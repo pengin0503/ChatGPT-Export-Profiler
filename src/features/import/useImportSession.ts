@@ -204,7 +204,8 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
     try {
       const zipSafetyPolicy = await loadZipSafetyPolicy();
       const inspection = await inspectExportZip(file, zipSafetyPolicy);
-      if (!inspection.ok || !inspection.conversationEntry) {
+      const hasConversationPayload = Boolean(inspection.conversationEntry) || Boolean(inspection.conversationEntries?.length);
+      if (!inspection.ok || !hasConversationPayload) {
         setState({ status: 'failed', code: 'ZIP_SAFETY_BLOCKED', messageKey: 'import.zipSafetyBlocked' });
         return;
       }

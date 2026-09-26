@@ -15,6 +15,37 @@ describe('inspectExportZip', () => {
     expect(result.blockingIssues).toEqual([]);
   });
 
+  it('accepts a synthetic sharded conversations export', async () => {
+    const file = await makeZip([
+      { name: 'conversations-001.json', text: JSON.stringify([{ id: 'synthetic-1', mapping: {} }]) },
+      { name: 'conversations-002.json', text: JSON.stringify([{ id: 'synthetic-2', mapping: {} }]) },
+      { name: 'export_manifest.json', text: JSON.stringify({ logical_files: { 'conversations.json': { sharded: true, shard_count: 2, files: ['conversations-001.json', 'conversations-002.json'] } } }) }
+    ]);
+    const result = await inspectExportZip(file);
+    expect(result.ok).toBe(true);
+    expect(result.blockingIssues).toEqual([]);
+  });
+
+  it('blocks mixed monolithic and sharded conversation payloads as ambiguous', async () => {
+    const file = await makeZip([
+      { name: 'conversations.json', text: '[]' },
+      { name: 'conversations-001.json', text: '[]' }
+    ]);
+    const result = await inspectExportZip(file);
+    expect(result.ok).toBe(false);
+    expect(result.blockingIssues.map((issue) => issue.code)).toContain('DUPLICATE_CONVERSATIONS');
+  });
+
+  it('applies the conversation byte limit to the sum of shard sizes', async () => {
+    const file = await makeZip([
+      { name: 'conversations-001.json', text: '[{"synthetic":"payload-a"}]' },
+      { name: 'conversations-002.json', text: '[{"synthetic":"payload-b"}]' }
+    ]);
+    const result = await inspectExportZip(file, { ...DEFAULT_ZIP_SAFETY, maxConversationBytes: 16 });
+    expect(result.ok).toBe(false);
+    expect(result.blockingIssues.map((issue) => issue.code)).toContain('CONVERSATIONS_TOO_LARGE');
+  });
+
   it('blocks a zip missing conversations.json', async () => {
     const result = await inspectExportZip(await makeZip([{ name: 'user.json', text: '{}' }]));
     expect(result.ok).toBe(false);
