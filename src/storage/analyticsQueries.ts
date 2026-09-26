@@ -36,8 +36,14 @@ export interface ConversationQueryResult {
 
 export interface OverviewMetrics {
   totals: { conversations: number; messages: number; visibleTokens: number };
-  peakDay: { key: string; messages: number; conversations: number; visibleTokens: number } | null;
+  peakDay: { key: string } & AggregateBucket | null;
   largestConversation: ConversationMetricRecord | null;
+}
+
+interface AggregateBucket {
+  messages: number;
+  conversations: number;
+  visibleTokens: number;
 }
 
 export interface StoredModelMetric {
@@ -179,22 +185,52 @@ function projectAndFilterConversation(
   return row;
 }
 
-function retainBoundedSorted(
-  rows: ConversationMetricRecord[],
+function siftHeapUp(
+  heap: ConversationMetricRecord[],
+  index: number,
+  compare: (a: ConversationMetricRecord, b: ConversationMetricRecord) => number
+): void {
+  let current = index;
+  while (current > 0) {
+    const parent = (current - 1) >>> 1;
+    if (compare(heap[current], heap[parent]) <= 0) break;
+    [heap[current], heap[parent]] = [heap[parent], heap[current]];
+    current = parent;
+  }
+}
+
+function siftHeapDown(
+  heap: ConversationMetricRecord[],
+  compare: (a: ConversationMetricRecord, b: ConversationMetricRecord) => number
+): void {
+  let current = 0;
+  while (true) {
+    const left = current * 2 + 1;
+    const right = left + 1;
+    let worst = current;
+    if (left < heap.length && compare(heap[left], heap[worst]) > 0) worst = left;
+    if (right < heap.length && compare(heap[right], heap[worst]) > 0) worst = right;
+    if (worst === current) return;
+    [heap[current], heap[worst]] = [heap[worst], heap[current]];
+    current = worst;
+  }
+}
+
+function retainBoundedBest(
+  heap: ConversationMetricRecord[],
   row: ConversationMetricRecord,
   compare: (a: ConversationMetricRecord, b: ConversationMetricRecord) => number,
   maximum: number
 ): void {
   if (maximum <= 0) return;
-  let low = 0;
-  let high = rows.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if (compare(row, rows[middle]) < 0) high = middle;
-    else low = middle + 1;
+  if (heap.length < maximum) {
+    heap.push(row);
+    siftHeapUp(heap, heap.length - 1, compare);
+    return;
   }
-  rows.splice(low, 0, row);
-  if (rows.length > maximum) rows.pop();
+  if (compare(row, heap[0]) >= 0) return;
+  heap[0] = row;
+  siftHeapDown(heap, compare);
 }
 
 function hasConversationFilters(options: ConversationQueryOptions): boolean {
@@ -272,7 +308,7 @@ async function scanConversationPage(
     let cursor = await index.openCursor(analysisId);
     while (cursor) {
       const row = projectAndFilterConversation(cursor.value, options);
-      if (row) retainBoundedSorted(rows, row, retentionCompare, maximum);
+      if (row) retainBoundedBest(rows, row, retentionCompare, maximum);
       cursor = await cursor.continue();
     }
     await tx.done;
@@ -280,10 +316,8 @@ async function scanConversationPage(
     db.close();
   }
 
-  if (retainTail) {
-    rows.sort(compare);
-    return { total, rows: rows.slice(0, pageLength) };
-  }
+  rows.sort(compare);
+  if (retainTail) return { total, rows: rows.slice(0, pageLength) };
   return { total, rows: rows.slice(offset, offset + pageLength) };
 }
 
