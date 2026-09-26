@@ -1,3 +1,5 @@
+import { mkdir, utimes, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { makeZip } from '../helpers/makeZip';
 
@@ -68,18 +70,8 @@ const conversations = [
   }
 ];
 
-async function setAcceptanceZip(page: Page, buffer: Buffer): Promise<void> {
-  await page.getByLabel('Choose ChatGPT export ZIP').evaluate((element, bytes) => {
-    const input = element as HTMLInputElement;
-    const file = new File([new Uint8Array(bytes)], 'v1-acceptance-synthetic.zip', {
-      type: 'application/zip',
-      lastModified: 1_797_100_000_000
-    });
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    input.files = transfer.files;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }, [...buffer]);
+async function setAcceptanceZip(page: Page, zipPath: string): Promise<void> {
+  await page.getByLabel('Choose ChatGPT export ZIP').setInputFiles(zipPath);
 }
 
 async function expectDownload(page: Page, buttonName: string): Promise<Download> {
@@ -90,9 +82,14 @@ async function expectDownload(page: Page, buttonName: string): Promise<Download>
   return download;
 }
 
-test('walks the complete v1 local-only product and reloads persisted analysis', async ({ page }) => {
+test('walks the complete v1 local-only product and reloads persisted analysis', async ({ page }, testInfo) => {
   const zip = await makeZip([{ name: 'conversations.json', text: JSON.stringify(conversations) }]);
   const buffer = Buffer.from(await zip.arrayBuffer());
+  const zipPath = testInfo.outputPath('v1-acceptance-synthetic.zip');
+  await mkdir(dirname(zipPath), { recursive: true });
+  await writeFile(zipPath, buffer);
+  const syntheticMtime = new Date(1_797_100_000_000);
+  await utimes(zipPath, syntheticMtime, syntheticMtime);
   const externalRequests: string[] = [];
 
   page.on('request', (request) => {
@@ -102,7 +99,7 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
   });
 
   await page.goto('/');
-  await setAcceptanceZip(page, buffer);
+  await setAcceptanceZip(page, zipPath);
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/2 conversations/i)).toBeVisible();
 
@@ -165,8 +162,8 @@ test('walks the complete v1 local-only product and reloads persisted analysis', 
   await expect(page.getByRole('list', { name: 'Local pricing history' })).toContainText('gpt-6-sol · 2026-09-01');
 
   await page.getByRole('button', { name: 'Import' }).click();
-  await setAcceptanceZip(page, buffer);
-  await expect(page.getByText(/already exists locally/i)).toBeVisible();
+  await setAcceptanceZip(page, zipPath);
+  await expect(page.getByText(/completed local analysis/i)).toBeVisible();
   await page.getByRole('button', { name: 'Open existing' }).click();
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   await expect(page.getByText(/2 conversations/i)).toBeVisible();
