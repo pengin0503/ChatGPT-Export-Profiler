@@ -6,6 +6,7 @@ import {
   type StartImportMessage
 } from '../../import/pipelineProtocol';
 import { analysisRepository, type AnalysisRecord, type ImportCheckpoint } from '../../storage/repositories';
+import type { AnalysisStatus } from '../../storage/db';
 
 export interface WorkerPort {
   postMessage(message: PipelineMessage): void;
@@ -40,6 +41,7 @@ interface ImportControllerDependencies {
   createImportWorker(): WorkerPort;
   createAnalysisWorker(): WorkerPort;
   createAnalysis(record: AnalysisRecord): Promise<void>;
+  updateAnalysisStatus(id: string, status: AnalysisStatus): Promise<void>;
 }
 
 const DEFAULT_DEPENDENCIES: ImportControllerDependencies = {
@@ -47,8 +49,15 @@ const DEFAULT_DEPENDENCIES: ImportControllerDependencies = {
   fingerprintImport,
   createImportWorker: () => new Worker(new URL('../../workers/import.worker.ts', import.meta.url), { type: 'module' }),
   createAnalysisWorker: () => new Worker(new URL('../../workers/analysis.worker.ts', import.meta.url), { type: 'module' }),
-  createAnalysis: (record) => analysisRepository.create(record)
+  createAnalysis: (record) => analysisRepository.create(record),
+  updateAnalysisStatus: (id, status) => analysisRepository.updateStatus(id, status)
 };
+
+function abortError(): Error {
+  const error = new Error('Import startup was cancelled.');
+  error.name = 'AbortError';
+  return error;
+}
 
 export class ImportPipelineError extends Error {
   constructor(
@@ -69,6 +78,8 @@ export class ImportController {
   private readonly listeners = new Set<(event: ImportControllerEvent) => void>();
   private importListener?: (event: MessageEvent<PipelineMessage>) => void;
   private analysisListener?: (event: MessageEvent<PipelineMessage>) => void;
+  private startupGeneration = 0;
+  private activeAnalysisId?: string;
 
   constructor(dependencies: Partial<ImportControllerDependencies> = {}) {
     this.dependencies = { ...DEFAULT_DEPENDENCIES, ...dependencies };
@@ -83,13 +94,20 @@ export class ImportController {
     return this.latestCheckpoint ? { ...this.latestCheckpoint } : undefined;
   }
 
+  private assertActiveGeneration(generation: number): void {
+    if (generation !== this.startupGeneration) throw abortError();
+  }
+
   async start(file: Blob, options: ImportStartOptions): Promise<ImportSessionStartResult> {
+    const generation = ++this.startupGeneration;
     const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
+    this.assertActiveGeneration(generation);
     if (!inspection.ok || !inspection.conversationEntry) {
       throw new ImportPipelineError('ZIP_SAFETY_BLOCKED', 'inspection', 'import.zipSafetyBlocked');
     }
 
     const fingerprint = await this.dependencies.fingerprintImport(file, inspection);
+    this.assertActiveGeneration(generation);
     const analysisId = options.analysisId ?? crypto.randomUUID();
     await this.dependencies.createAnalysis({
       id: analysisId,
@@ -102,24 +120,33 @@ export class ImportController {
       tokenizerVersion: 1,
       pricingDatasetVersion: 1
     });
+    if (generation !== this.startupGeneration) {
+      await this.dependencies.updateAnalysisStatus(analysisId, 'cancelled');
+      throw abortError();
+    }
 
     this.latestCheckpoint = undefined;
+    this.activeAnalysisId = analysisId;
     this.beginWorkers(file, analysisId, fingerprint.hash, options.profile, undefined, options.modelAliases, options.zipSafetyPolicy);
     return { analysisId, fingerprint };
   }
 
   async resume(file: Blob, checkpoint: ImportCheckpoint, options: ImportResumeOptions = {}): Promise<ImportSessionStartResult> {
+    const generation = ++this.startupGeneration;
     const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
+    this.assertActiveGeneration(generation);
     if (!inspection.ok || !inspection.conversationEntry) {
       throw new ImportPipelineError('ZIP_SAFETY_BLOCKED', 'inspection', 'import.zipSafetyBlocked');
     }
 
     const fingerprint = await this.dependencies.fingerprintImport(file, inspection);
+    this.assertActiveGeneration(generation);
     if (fingerprint.hash !== checkpoint.fingerprint) {
       throw new ImportPipelineError('FINGERPRINT_MISMATCH', 'inspection', 'import.fingerprintMismatch');
     }
 
     this.latestCheckpoint = { ...checkpoint };
+    this.activeAnalysisId = checkpoint.analysisId;
     this.beginWorkers(
       file,
       checkpoint.analysisId,
@@ -133,9 +160,13 @@ export class ImportController {
   }
 
   cancel(): void {
+    this.startupGeneration += 1;
     this.importWorker?.postMessage({ type: 'CANCEL' });
     this.analysisWorker?.postMessage({ type: 'CANCEL' });
+    const analysisId = this.activeAnalysisId;
+    this.activeAnalysisId = undefined;
     this.shutdownWorkers();
+    if (analysisId) void this.dependencies.updateAnalysisStatus(analysisId, 'cancelled');
   }
 
   private beginWorkers(
@@ -169,6 +200,15 @@ export class ImportController {
     }
   }
 
+  private async handleFailure(message: Extract<PipelineMessage, { type: 'FAIL' }>): Promise<void> {
+    this.captureFailureCheckpoint(message);
+    const analysisId = this.activeAnalysisId;
+    if (analysisId) await this.dependencies.updateAnalysisStatus(analysisId, 'failed');
+    this.emit(message);
+    this.activeAnalysisId = undefined;
+    this.shutdownWorkers();
+  }
+
   private onImportMessage(message: PipelineMessage): void {
     if (message.type === 'BATCH') {
       this.analysisWorker?.postMessage(message);
@@ -180,9 +220,7 @@ export class ImportController {
       return;
     }
     if (message.type === 'FAIL') {
-      this.captureFailureCheckpoint(message);
-      this.emit(message);
-      this.shutdownWorkers();
+      void this.handleFailure(message);
       return;
     }
     if (message.type !== 'START_IMPORT') this.emit(message);
@@ -197,13 +235,12 @@ export class ImportController {
     }
     if (message.type === 'COMPLETE' && message.source === 'analysis') {
       this.emit(message);
+      this.activeAnalysisId = undefined;
       this.shutdownWorkers();
       return;
     }
     if (message.type === 'FAIL') {
-      this.captureFailureCheckpoint(message);
-      this.emit(message);
-      this.shutdownWorkers();
+      void this.handleFailure(message);
       return;
     }
     if (message.type !== 'START_IMPORT' && message.type !== 'BATCH') this.emit(message);
