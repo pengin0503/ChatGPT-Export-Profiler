@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CostAssumptions } from '../../analysis/pricing';
+import { formatMessage, useI18n } from '../../i18n';
 
 export interface CostScenarioRequest {
   replacementModelId: string;
@@ -11,15 +12,16 @@ interface CostScenarioEditorProps {
   onCalculate(request: CostScenarioRequest): void | Promise<void>;
 }
 
-function ratio(value: string, label: string): number {
+function ratio(value: string, label: string, errorTemplate: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-    throw new RangeError(`${label} must be between 0 and 1.`);
+    throw new RangeError(formatMessage(errorTemplate, { label }));
   }
   return parsed;
 }
 
 export function CostScenarioEditor({ modelIds, onCalculate }: CostScenarioEditorProps) {
+  const { t } = useI18n();
   const [replacementModelId, setReplacementModelId] = useState(modelIds[0] ?? '');
   const [cacheRatio, setCacheRatio] = useState('0');
   const [hiddenInputOverheadRatio, setHiddenInputOverheadRatio] = useState('0.2');
@@ -28,28 +30,26 @@ export function CostScenarioEditor({ modelIds, onCalculate }: CostScenarioEditor
 
   return (
     <section className="panel" aria-labelledby="scenario-heading">
-      <h3 id="scenario-heading">Estimated processing scenario</h3>
-      <p className="muted-copy">
-        These controls are user-selected scenario inputs. They do not describe actual ChatGPT server-side processing.
-      </p>
+      <h3 id="scenario-heading">{t('costScenario.title')}</h3>
+      <p className="muted-copy">{t('costScenario.description')}</p>
       <div className="form-grid">
         <label>
-          <span>Model substitution</span>
+          <span>{t('costScenario.modelSubstitution')}</span>
           <select value={replacementModelId} onChange={(event) => setReplacementModelId(event.target.value)}>
             {modelIds.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
           </select>
         </label>
         <label>
-          <span>Cache ratio</span>
-          <input aria-label="Cache ratio" inputMode="decimal" value={cacheRatio} onChange={(event) => setCacheRatio(event.target.value)} />
+          <span>{t('costScenario.cacheRatio')}</span>
+          <input aria-label={t('costScenario.cacheRatio')} inputMode="decimal" value={cacheRatio} onChange={(event) => setCacheRatio(event.target.value)} />
         </label>
         <label>
-          <span>Hidden input overhead</span>
-          <input aria-label="Hidden input overhead" inputMode="decimal" value={hiddenInputOverheadRatio} onChange={(event) => setHiddenInputOverheadRatio(event.target.value)} />
+          <span>{t('costScenario.hiddenInputOverhead')}</span>
+          <input aria-label={t('costScenario.hiddenInputOverhead')} inputMode="decimal" value={hiddenInputOverheadRatio} onChange={(event) => setHiddenInputOverheadRatio(event.target.value)} />
         </label>
         <label>
-          <span>Reasoning output overhead</span>
-          <input aria-label="Reasoning output overhead" inputMode="decimal" value={reasoningOutputOverheadRatio} onChange={(event) => setReasoningOutputOverheadRatio(event.target.value)} />
+          <span>{t('costScenario.reasoningOutputOverhead')}</span>
+          <input aria-label={t('costScenario.reasoningOutputOverhead')} inputMode="decimal" value={reasoningOutputOverheadRatio} onChange={(event) => setReasoningOutputOverheadRatio(event.target.value)} />
         </label>
       </div>
       {error ? <p className="inline-error" role="alert">{error}</p> : null}
@@ -59,19 +59,19 @@ export function CostScenarioEditor({ modelIds, onCalculate }: CostScenarioEditor
         onClick={() => {
           try {
             const assumptions: CostAssumptions = {
-              cacheRatio: ratio(cacheRatio, 'Cache ratio'),
-              hiddenInputOverheadRatio: ratio(hiddenInputOverheadRatio, 'Hidden input overhead'),
-              reasoningOutputOverheadRatio: ratio(reasoningOutputOverheadRatio, 'Reasoning output overhead')
+              cacheRatio: ratio(cacheRatio, t('costScenario.cacheRatio'), t('costScenario.ratioError')),
+              hiddenInputOverheadRatio: ratio(hiddenInputOverheadRatio, t('costScenario.hiddenInputOverhead'), t('costScenario.ratioError')),
+              reasoningOutputOverheadRatio: ratio(reasoningOutputOverheadRatio, t('costScenario.reasoningOutputOverhead'), t('costScenario.ratioError'))
             };
-            if (!replacementModelId) throw new Error('Choose a replacement model.');
+            if (!replacementModelId) throw new Error(t('costScenario.chooseModel'));
             setError(undefined);
             void onCalculate({ replacementModelId, assumptions });
           } catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Invalid scenario inputs.');
+            setError(caught instanceof Error ? caught.message : t('costScenario.invalidInputs'));
           }
         }}
       >
-        Calculate scenario
+        {t('costScenario.calculate')}
       </button>
     </section>
   );
