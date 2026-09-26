@@ -55,13 +55,15 @@ npm run build
 npm run preview
 ```
 
-The Vite build uses relative asset paths so the same `dist/` works under the repository GitHub Pages subpath.
+The Vite build uses relative asset paths so the same `dist/` can be served from a subpath or packaged for local/offline use without a repository-specific hosted URL.
 
 ## PWA and offline package
 
-A production build registers a local application-shell service worker. After the PWA has been loaded and installed/cached, supported browsers can reopen the application without network access.
+A production build registers a local application-shell service worker when served from a compatible secure origin. After the PWA has been loaded and installed/cached, supported browsers can reopen the application without network access.
 
-A standalone offline package can also be built:
+This repository is private and does **not** use GitHub Pages. Repository-backed distribution is through immutable GitHub Releases and the downloadable offline package. Any hosted PWA validation must use a user-provided, explicitly approved secure origin; the application itself still does not upload imported export data.
+
+A standalone offline package can be built:
 
 ```bash
 npm run make:offline
@@ -95,12 +97,13 @@ Generated large ZIPs are ignored by Git. The repository must never contain a rea
 
 Automated E2E coverage runs against Chromium, Firefox, and WebKit. The suite also exercises iPad portrait/landscape viewports, touch-capable layouts, offline/PWA behavior, hostile synthetic content, and the complete v1 product flow.
 
-Automated WebKit/iPad viewport tests do **not** replace release testing on physical iPad Safari and iPad Orion. The v1 release checklist requires real-device verification before v1.0 is declared complete.
+Automated WebKit/iPad viewport tests do **not** replace release testing on physical iPad Safari and iPad Orion. The v1 release checklist requires real-device verification before v1.0 is declared complete. Because this private repository does not publish Pages, physical-device PWA checks require a separately provided approved secure origin.
 
 ## CI and delivery
 
 - `.github/workflows/ci.yml` runs the main quality gates on pushes and pull requests targeting `main`.
-- `.github/workflows/pages.yml` builds and deploys only `dist/` to GitHub Pages.
+- `.github/workflows/performance-scale.yml` provides scheduled/manual 10k and 50k fully synthetic scale verification.
 - `.github/workflows/release.yml` runs the release quality gate for `v*` tags and attaches the versioned offline ZIP to the GitHub Release.
+- GitHub Pages is intentionally not configured for this private repository.
 
 CI and test fixtures are synthetic. User exports, generated analysis databases, and local browser data are not CI artifacts.

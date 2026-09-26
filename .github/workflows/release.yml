@@ -60,13 +60,15 @@ jobs:
             cat > release-notes.md <<'EOF'
           This is an iPad validation release candidate for ChatGPT Export Profiler.
 
-          Recommended iPad validation path:
-          1. Open the GitHub Pages deployment in Safari and Orion.
+          This repository is private and does not publish a GitHub Pages deployment. For iPad Safari/Orion PWA validation, use a user-provided trusted HTTPS static host or another explicitly approved secure origin for the validated `dist/` build.
+
+          Recommended validation:
+          1. Open the validated build in Safari and Orion from the approved secure origin.
           2. Import a medium synthetic export and verify portrait/landscape behavior.
-          3. Test background/recovery, export, deletion, and offline/PWA launch.
+          3. Test background/recovery, export, deletion, and offline/PWA launch where the serving environment supports it.
           4. Report any device-only issue before the final v1.0.0 release.
 
-          The ZIP asset attached to this release is the same validated static build packaged for local/offline serving. It can be downloaded directly from the GitHub Release page without PowerShell.
+          The ZIP asset attached to this release contains the same validated static build packaged for local/offline desktop serving. It can be downloaded directly from the GitHub Release page without PowerShell.
           EOF
             gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_TAG — iPad validation build" --prerelease --notes-file release-notes.md
           else
