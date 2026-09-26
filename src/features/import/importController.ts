@@ -59,6 +59,10 @@ function abortError(): Error {
   return error;
 }
 
+function hasConversationPayload(inspection: ZipInspection): boolean {
+  return Boolean(inspection.conversationEntry) || Boolean(inspection.conversationEntries?.length);
+}
+
 export class ImportPipelineError extends Error {
   constructor(
     readonly code: string,
@@ -102,7 +106,7 @@ export class ImportController {
     const generation = ++this.startupGeneration;
     const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
     this.assertActiveGeneration(generation);
-    if (!inspection.ok || !inspection.conversationEntry) {
+    if (!inspection.ok || !hasConversationPayload(inspection)) {
       throw new ImportPipelineError('ZIP_SAFETY_BLOCKED', 'inspection', 'import.zipSafetyBlocked');
     }
 
@@ -135,7 +139,7 @@ export class ImportController {
     const generation = ++this.startupGeneration;
     const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
     this.assertActiveGeneration(generation);
-    if (!inspection.ok || !inspection.conversationEntry) {
+    if (!inspection.ok || !hasConversationPayload(inspection)) {
       throw new ImportPipelineError('ZIP_SAFETY_BLOCKED', 'inspection', 'import.zipSafetyBlocked');
     }
 
