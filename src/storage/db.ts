@@ -71,6 +71,7 @@ export interface ImportCheckpoint {
   committedBatches: number;
   processedConversations: number;
   updatedAt: number;
+  modelAliases?: Record<string, string>;
 }
 
 export interface KeyValueRecord {
@@ -130,45 +131,33 @@ export interface ProfilerDbSchema extends DBSchema {
   };
 }
 
-export type ProfilerDatabase = IDBPDatabase<ProfilerDbSchema>;
-
-export function openProfilerDb(): Promise<ProfilerDatabase> {
+export async function openProfilerDb(): Promise<IDBPDatabase<ProfilerDbSchema>> {
   return openDB<ProfilerDbSchema>(PROFILER_DB_NAME, PROFILER_DB_VERSION, {
-    upgrade(db, oldVersion) {
-      if (oldVersion >= 1) return;
+    upgrade(db) {
+      if (!db.objectStoreNames.contains('analyses')) db.createObjectStore('analyses', { keyPath: 'id' });
 
-      db.createObjectStore('analyses', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('conversations')) {
+        const store = db.createObjectStore('conversations', { keyPath: ['analysisId', 'conversationId'] });
+        store.createIndex('by-analysis', 'analysisId');
+      }
 
-      const conversations = db.createObjectStore('conversations', {
-        keyPath: ['analysisId', 'conversationId']
-      });
-      conversations.createIndex('by-analysis', 'analysisId');
+      if (!db.objectStoreNames.contains('conversationMetrics')) {
+        const store = db.createObjectStore('conversationMetrics', { keyPath: ['analysisId', 'conversationId'] });
+        store.createIndex('by-analysis', 'analysisId');
+      }
 
-      const conversationMetrics = db.createObjectStore('conversationMetrics', {
-        keyPath: ['analysisId', 'conversationId']
-      });
-      conversationMetrics.createIndex('by-analysis', 'analysisId');
+      for (const name of ['modelMetrics', 'timelineMetrics', 'toolMetrics'] as const) {
+        if (!db.objectStoreNames.contains(name)) {
+          const store = db.createObjectStore(name, { keyPath: ['analysisId', 'localKey'] });
+          store.createIndex('by-analysis', 'analysisId');
+        }
+      }
 
-      const modelMetrics = db.createObjectStore('modelMetrics', {
-        keyPath: ['analysisId', 'localKey']
-      });
-      modelMetrics.createIndex('by-analysis', 'analysisId');
-
-      const timelineMetrics = db.createObjectStore('timelineMetrics', {
-        keyPath: ['analysisId', 'localKey']
-      });
-      timelineMetrics.createIndex('by-analysis', 'analysisId');
-
-      const toolMetrics = db.createObjectStore('toolMetrics', {
-        keyPath: ['analysisId', 'localKey']
-      });
-      toolMetrics.createIndex('by-analysis', 'analysisId');
-
-      db.createObjectStore('costProfiles', { keyPath: 'key' });
-      db.createObjectStore('pricingHistory', { keyPath: 'key' });
-      db.createObjectStore('dataQuality', { keyPath: 'analysisId' });
-      db.createObjectStore('settings', { keyPath: 'key' });
-      db.createObjectStore('checkpoints', { keyPath: 'analysisId' });
+      if (!db.objectStoreNames.contains('costProfiles')) db.createObjectStore('costProfiles', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('pricingHistory')) db.createObjectStore('pricingHistory', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('dataQuality')) db.createObjectStore('dataQuality', { keyPath: 'analysisId' });
+      if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('checkpoints')) db.createObjectStore('checkpoints', { keyPath: 'analysisId' });
     }
   });
 }
