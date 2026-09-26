@@ -1,10 +1,17 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { ImportController, type WorkerPort } from '../../src/features/import/importController';
-import type { ImportCheckpoint } from '../../src/storage/repositories';
+import type { AnalysisRecord, ImportCheckpoint } from '../../src/storage/repositories';
 import type { ImportFingerprint } from '../../src/analysis/fingerprint';
 import type { ZipInspection } from '../../src/import/zipInspector';
 import type { PipelineMessage } from '../../src/import/pipelineProtocol';
+import {
+  ANALYSIS_SCHEMA_VERSION,
+  ANALYZER_VERSION,
+  APP_VERSION,
+  PRICING_DATASET_VERSION,
+  TOKENIZER_VERSION
+} from '../../src/version';
 
 class FakeWorker implements WorkerPort {
   readonly posted: PipelineMessage[] = [];
@@ -63,6 +70,20 @@ function checkpoint(overrides: Partial<ImportCheckpoint> = {}): ImportCheckpoint
   };
 }
 
+function compatibleAnalysis(id = 'analysis-1'): AnalysisRecord {
+  return {
+    id,
+    fingerprint: 'expected-fingerprint',
+    createdAt: 1,
+    status: 'running',
+    appVersion: APP_VERSION,
+    schemaVersion: ANALYSIS_SCHEMA_VERSION,
+    analyzerVersion: ANALYZER_VERSION,
+    tokenizerVersion: TOKENIZER_VERSION,
+    pricingDatasetVersion: PRICING_DATASET_VERSION
+  };
+}
+
 const noStatusUpdate = async () => undefined;
 
 describe('ImportController recovery', () => {
@@ -77,6 +98,7 @@ describe('ImportController recovery', () => {
         throw new Error('workers must not start after a fingerprint mismatch');
       },
       createAnalysis: async () => undefined,
+      getAnalysis: async () => compatibleAnalysis(),
       updateAnalysisStatus: noStatusUpdate
     });
 
@@ -94,6 +116,7 @@ describe('ImportController recovery', () => {
       createImportWorker: () => importWorker,
       createAnalysisWorker: () => analysisWorker,
       createAnalysis: async () => undefined,
+      getAnalysis: async () => compatibleAnalysis(),
       updateAnalysisStatus: noStatusUpdate
     });
 
@@ -119,6 +142,7 @@ describe('ImportController recovery', () => {
       createImportWorker: () => importWorker,
       createAnalysisWorker: () => analysisWorker,
       createAnalysis: async () => undefined,
+      getAnalysis: async () => compatibleAnalysis(),
       updateAnalysisStatus: noStatusUpdate
     });
     const events: PipelineMessage[] = [];
