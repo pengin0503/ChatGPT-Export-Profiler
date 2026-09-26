@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MetricBadge } from '../../components/MetricBadge';
+import { useI18n } from '../../i18n';
 import { getOverviewMetrics } from '../../storage/analyticsQueries';
 import { openProfilerDb } from '../../storage/db';
 
@@ -11,6 +12,7 @@ interface ReportedSummary {
 }
 
 export function ComparisonPage({ analysisId }: { analysisId: string }) {
+  const { t } = useI18n();
   const [chatTokens, setChatTokens] = useState(0);
   const [reportedInput, setReportedInput] = useState('');
   const [reported, setReported] = useState<ReportedSummary>();
@@ -42,7 +44,7 @@ export function ComparisonPage({ analysisId }: { analysisId: string }) {
   async function save(): Promise<void> {
     const tokens = Number(reportedInput);
     if (!Number.isFinite(tokens) || tokens < 0) {
-      setError('Reported tokens must be a non-negative number.');
+      setError(t('comparison.invalidTokens'));
       return;
     }
     const value: ReportedSummary = { tokens, provenance: 'reported' };
@@ -58,28 +60,28 @@ export function ComparisonPage({ analysisId }: { analysisId: string }) {
 
   return (
     <section className="analytics-page" aria-labelledby="comparison-heading">
-      <p className="eyebrow">CROSS-SURFACE COMPARISON</p>
-      <h2 id="comparison-heading">Comparison</h2>
-      <p className="quality-note">Measurement semantics differ between Chat export-derived metrics and Work/Codex reported summaries. Values are shown side by side, not treated as equivalent measurements.</p>
+      <p className="eyebrow">{t('comparison.eyebrow')}</p>
+      <h2 id="comparison-heading">{t('nav.comparison')}</h2>
+      <p className="quality-note">{t('comparison.note')}</p>
       <div className="metric-grid">
-        <MetricBadge label="Chat visible tokens" value={chatTokens.toLocaleString()} provenance="calculated" />
-        <MetricBadge label="Chat illustrative processing range" value={`${estimatedRange.lower.toLocaleString()}–${estimatedRange.upper.toLocaleString()}`} provenance="estimated" detail="Illustrative 1.0–1.5× visible-token range; not actual server-side processing." />
+        <MetricBadge label={t('comparison.chatVisibleTokens')} value={chatTokens.toLocaleString()} provenance="calculated" />
+        <MetricBadge label={t('comparison.processingRange')} value={`${estimatedRange.lower.toLocaleString()}–${estimatedRange.upper.toLocaleString()}`} provenance="estimated" detail={t('comparison.processingRangeDetail')} />
         {reported ? (
           <article className="metric-card">
-            <span className="metric-label">Work/Codex summary</span>
+            <span className="metric-label">{t('comparison.workSummary')}</span>
             <strong className="metric-value">{reported.tokens.toLocaleString()}</strong>
-            <span className="provenance provenance-reported">reported</span>
+            <span className="provenance provenance-reported">{t('comparison.reported')}</span>
           </article>
         ) : null}
       </div>
       <section className="panel" aria-labelledby="reported-heading">
-        <h3 id="reported-heading">Manual Work/Codex summary</h3>
+        <h3 id="reported-heading">{t('comparison.manualTitle')}</h3>
         <label>
-          <span>Work/Codex reported tokens</span>
-          <input aria-label="Work/Codex reported tokens" inputMode="numeric" value={reportedInput} onChange={(event) => setReportedInput(event.target.value)} />
+          <span>{t('comparison.reportedTokens')}</span>
+          <input aria-label={t('comparison.reportedTokens')} inputMode="numeric" value={reportedInput} onChange={(event) => setReportedInput(event.target.value)} />
         </label>
         {error ? <p role="alert" className="inline-error">{error}</p> : null}
-        <button className="primary-action" type="button" onClick={() => void save()}>Save reported summary</button>
+        <button className="primary-action" type="button" onClick={() => void save()}>{t('comparison.save')}</button>
       </section>
     </section>
   );
