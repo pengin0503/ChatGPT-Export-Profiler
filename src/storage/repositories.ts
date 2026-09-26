@@ -66,28 +66,38 @@ export const analysisRepository = {
       );
 
       const conversations = tx.objectStore('conversations');
-      for (const key of await conversations.index('by-analysis').getAllKeys(id)) {
-        await conversations.delete(key);
+      let conversationCursor = await conversations.index('by-analysis').openKeyCursor(id);
+      while (conversationCursor) {
+        await conversations.delete(conversationCursor.primaryKey);
+        conversationCursor = await conversationCursor.continue();
       }
 
       const conversationMetrics = tx.objectStore('conversationMetrics');
-      for (const key of await conversationMetrics.index('by-analysis').getAllKeys(id)) {
-        await conversationMetrics.delete(key);
+      let metricCursor = await conversationMetrics.index('by-analysis').openKeyCursor(id);
+      while (metricCursor) {
+        await conversationMetrics.delete(metricCursor.primaryKey);
+        metricCursor = await metricCursor.continue();
       }
 
       const modelMetrics = tx.objectStore('modelMetrics');
-      for (const key of await modelMetrics.index('by-analysis').getAllKeys(id)) {
-        await modelMetrics.delete(key);
+      let modelCursor = await modelMetrics.index('by-analysis').openKeyCursor(id);
+      while (modelCursor) {
+        await modelMetrics.delete(modelCursor.primaryKey);
+        modelCursor = await modelCursor.continue();
       }
 
       const timelineMetrics = tx.objectStore('timelineMetrics');
-      for (const key of await timelineMetrics.index('by-analysis').getAllKeys(id)) {
-        await timelineMetrics.delete(key);
+      let timelineCursor = await timelineMetrics.index('by-analysis').openKeyCursor(id);
+      while (timelineCursor) {
+        await timelineMetrics.delete(timelineCursor.primaryKey);
+        timelineCursor = await timelineCursor.continue();
       }
 
       const toolMetrics = tx.objectStore('toolMetrics');
-      for (const key of await toolMetrics.index('by-analysis').getAllKeys(id)) {
-        await toolMetrics.delete(key);
+      let toolCursor = await toolMetrics.index('by-analysis').openKeyCursor(id);
+      while (toolCursor) {
+        await toolMetrics.delete(toolCursor.primaryKey);
+        toolCursor = await toolCursor.continue();
       }
 
       await tx.objectStore('dataQuality').delete(id);
