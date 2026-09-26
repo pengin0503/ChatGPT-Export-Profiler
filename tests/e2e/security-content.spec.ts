@@ -38,7 +38,7 @@ const hostileConversation = {
   }
 };
 
-test('treats hostile export content as inert data and neutralizes CSV formulas', async ({ page }) => {
+test('treats hostile export content as inert data and keeps conversation titles opt-in', async ({ page }) => {
   const zip = await makeZip([{ name: 'conversations.json', text: JSON.stringify([hostileConversation]) }]);
   const buffer = Buffer.from(await zip.arrayBuffer());
 
@@ -59,14 +59,27 @@ test('treats hostile export content as inert data and neutralizes CSV formulas',
   await expect(page.locator('a[href^="javascript:"]')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Overview' }).click();
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export CSV' }).click();
-  const download = await downloadPromise;
-  const path = await download.path();
-  expect(path).not.toBeNull();
-  const csv = await readFile(path!, 'utf8');
 
-  expect(csv).toContain("'=HYPERLINK");
-  expect(csv).not.toMatch(/(?:^|\r?\n)conversation,=/);
+  const defaultDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV' }).click();
+  const defaultDownload = await defaultDownloadPromise;
+  const defaultPath = await defaultDownload.path();
+  expect(defaultPath).not.toBeNull();
+  const defaultCsv = await readFile(defaultPath!, 'utf8');
+
+  expect(defaultCsv).not.toContain('HYPERLINK');
+  expect(defaultCsv).not.toContain(hostileTitle);
+  expect(defaultCsv).toMatch(/(?:^|\r?\n)conversation,,/);
+
+  await page.getByLabel('Include conversation titles').check();
+  const titledDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV' }).click();
+  const titledDownload = await titledDownloadPromise;
+  const titledPath = await titledDownload.path();
+  expect(titledPath).not.toBeNull();
+  const titledCsv = await readFile(titledPath!, 'utf8');
+
+  expect(titledCsv).toContain("'=HYPERLINK");
+  expect(titledCsv).not.toMatch(/(?:^|\r?\n)conversation,=/);
   expect(await page.evaluate(() => (window as Window & { __xss?: number }).__xss)).toBeUndefined();
 });
