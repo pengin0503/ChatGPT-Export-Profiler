@@ -10,6 +10,13 @@ const baseInspection: ZipInspection = {
     compressedSize: 128,
     uncompressedSize: 512
   },
+  conversationEntries: [
+    {
+      filename: 'conversations.json',
+      compressedSize: 128,
+      uncompressedSize: 512
+    }
+  ],
   blockingIssues: []
 };
 
@@ -37,8 +44,32 @@ describe('fingerprintImport', () => {
     const first = await fingerprintImport(syntheticFile('synthetic-export-a'), baseInspection);
     const second = await fingerprintImport(syntheticFile('synthetic-export-a'), {
       ...baseInspection,
-      conversationEntry: { ...baseInspection.conversationEntry!, uncompressedSize: 513 }
+      conversationEntry: { ...baseInspection.conversationEntry!, uncompressedSize: 513 },
+      conversationEntries: [{ ...baseInspection.conversationEntries![0], uncompressedSize: 513 }]
     });
+    expect(second.hash).not.toBe(first.hash);
+  });
+
+  it('changes when sharded conversation entry metadata changes', async () => {
+    const sharded: ZipInspection = {
+      ok: true,
+      entryCount: 3,
+      conversationEntries: [
+        { filename: 'conversations-001.json', compressedSize: 100, uncompressedSize: 400 },
+        { filename: 'conversations-002.json', compressedSize: 120, uncompressedSize: 480 }
+      ],
+      blockingIssues: []
+    };
+    const first = await fingerprintImport(syntheticFile('synthetic-export-a'), sharded);
+    const second = await fingerprintImport(syntheticFile('synthetic-export-a'), {
+      ...sharded,
+      conversationEntries: [
+        sharded.conversationEntries![0],
+        { ...sharded.conversationEntries![1], uncompressedSize: 481 }
+      ]
+    });
+
+    expect(first.conversationEntries).toHaveLength(2);
     expect(second.hash).not.toBe(first.hash);
   });
 });
