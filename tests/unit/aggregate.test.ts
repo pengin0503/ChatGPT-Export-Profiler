@@ -67,6 +67,13 @@ describe('createAggregator', () => {
     expect(result.byModel['gpt-6-sol']?.messages).toBe(3);
     expect(result.byModel['gpt-5.6-sol']?.messages).toBe(2);
     expect(result.byModel['gpt-6-sol']?.conversations).toBe(2);
+    const dailyUsage = (result.byModel['gpt-6-sol'] as unknown as {
+      usageByDay?: Record<string, { inputTokens: number; outputTokens: number }>
+    }).usageByDay;
+    expect(Object.keys(dailyUsage ?? {}).sort()).toEqual(['2026-09-20', '2026-09-21']);
+    expect(dailyUsage?.['2026-09-20']?.inputTokens).toBeGreaterThan(0);
+    expect(dailyUsage?.['2026-09-20']?.outputTokens).toBeGreaterThan(0);
+
 
     expect(result.peakDay?.key).toBe('2026-09-20');
     expect(result.peakDay?.messages).toBe(4);

@@ -56,6 +56,49 @@ async function seedModels(): Promise<void> {
   db.close();
 }
 
+
+async function seedHistoricalPricing(): Promise<void> {
+  const analysisId = 'analysis-cost-history';
+  const db = await openProfilerDb();
+  const tx = db.transaction(['modelMetrics', 'pricingHistory'], 'readwrite');
+  await tx.objectStore('modelMetrics').put({
+    analysisId,
+    localKey: '1:gpt-6-sol',
+    value: {
+      modelId: 'gpt-6-sol',
+      messages: 2,
+      conversations: 1,
+      visibleTokens: 2_000_000,
+      inputTokens: 2_000_000,
+      outputTokens: 0,
+      otherTokens: 0,
+      rawAliases: ['gpt-6-sol'],
+      firstTimestamp: Date.parse('2026-09-23T00:00:00Z') / 1000,
+      lastTimestamp: Date.parse('2026-09-24T00:00:00Z') / 1000,
+      usageByDay: {
+        '2026-09-23': { inputTokens: 1_000_000, outputTokens: 0 },
+        '2026-09-24': { inputTokens: 1_000_000, outputTokens: 0 }
+      }
+    }
+  });
+  await tx.objectStore('pricingHistory').put({
+    key: 'override:gpt-6-sol:2026-09-24',
+    value: {
+      model: 'gpt-6-sol',
+      effectiveFrom: '2026-09-24',
+      effectiveTo: null,
+      inputPerMillion: 3,
+      cachedInputPerMillion: 0.3,
+      outputPerMillion: 12,
+      currency: 'USD',
+      datasetVersion: 1,
+      source: 'local user override'
+    }
+  });
+  await tx.done;
+  db.close();
+}
+
 afterEach(resetDb);
 
 describe('CostPage', () => {
@@ -84,5 +127,12 @@ describe('CostPage', () => {
     await user.click(screen.getByRole('button', { name: 'Calculate scenario' }));
 
     expect(await screen.findByText(/cache ratio must be between 0 and 1/i)).toBeVisible();
+  });
+
+  it('prices daily token totals using the price effective on each day', async () => {
+    await seedHistoricalPricing();
+    render(<CostPage analysisId="analysis-cost-history" />);
+
+    expect(await screen.findByText('$5.00')).toBeVisible();
   });
 });

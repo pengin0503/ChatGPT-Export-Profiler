@@ -34,6 +34,13 @@ describe('findPrice', () => {
   it('returns undefined for unsupported historical coverage', () => {
     expect(findPrice('example-model', Date.parse('2025-01-01'), [record])).toBeUndefined();
   });
+
+  it('prefers a local override when its effective date matches a built-in price', () => {
+    const builtIn = { ...record, source: 'built-in source' };
+    const override = { ...record, inputPerMillion: 9, source: 'local user override' };
+
+    expect(findPrice('example-model', Date.parse('2026-05-02'), [builtIn, override])).toBe(override);
+  });
 });
 
 describe('cost calculations', () => {

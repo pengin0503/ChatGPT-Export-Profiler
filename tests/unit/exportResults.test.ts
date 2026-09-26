@@ -1,9 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import 'fake-indexeddb/auto';
+import { afterEach, describe, expect, it } from 'vitest';
 import { exportJson, type AnalyticsExport } from '../../src/features/export-results/exportJson';
 import { exportCsv } from '../../src/features/export-results/exportCsv';
 import { exportMarkdown } from '../../src/features/export-results/exportMarkdown';
+import { buildAnalyticsExport } from '../../src/features/export-results/ExportResultsButton';
+import { openProfilerDb, PROFILER_DB_NAME } from '../../src/storage/db';
 
 const RAW_BODY_SENTINEL = 'RAW_BODY_SENTINEL_MUST_NEVER_EXPORT';
+
+
+async function resetDb(): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(PROFILER_DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('Database deletion blocked.'));
+  });
+}
+
+afterEach(resetDb);
 
 function fixture(): AnalyticsExport {
   return {
@@ -77,6 +92,72 @@ describe('privacy-safe analytics export', () => {
     expect(markdown).toContain('=SUM(A1:A2) \\| synthetic<br>line');
     expect(markdown).toContain('calculated');
     expect(markdown).toContain('estimated');
+    expect(markdown).toContain('cacheRatio: 0.25');
+    expect(markdown).toContain('hiddenInputOverheadRatio: 0.2');
+    expect(markdown).toContain('reasoningOutputOverheadRatio: 0.3');
+  });
+
+  it('includes persisted visible pricing and scenario assumptions in the downloadable report', async () => {
+    const analysisId = 'analysis-export-cost';
+    const db = await openProfilerDb();
+    const tx = db.transaction(['conversationMetrics', 'modelMetrics', 'costProfiles'], 'readwrite');
+    await tx.objectStore('conversationMetrics').put({
+      analysisId,
+      conversationId: 'synthetic-cost-conversation',
+      title: 'Synthetic cost report',
+      firstTimestamp: Date.parse('2026-09-24T00:00:00Z') / 1000,
+      lastTimestamp: Date.parse('2026-09-24T00:01:00Z') / 1000,
+      messages: 1,
+      visibleTokens: 1_000_000,
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      otherTokens: 0,
+      modelIds: ['gpt-6-sol'],
+      hasWeb: false,
+      hasFiles: false,
+      hasTools: false
+    });
+    await tx.objectStore('modelMetrics').put({
+      analysisId,
+      localKey: '1:gpt-6-sol',
+      value: {
+        modelId: 'gpt-6-sol',
+        messages: 1,
+        conversations: 1,
+        visibleTokens: 1_000_000,
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        otherTokens: 0,
+        rawAliases: ['gpt-6-sol'],
+        usageByDay: { '2026-09-24': { inputTokens: 1_000_000, outputTokens: 0 } }
+      }
+    });
+    await tx.objectStore('costProfiles').put({
+      key: `scenario:${analysisId}`,
+      value: {
+        lower: 1,
+        upper: 2,
+        request: {
+          replacementModelId: 'gpt-6-sol',
+          assumptions: {
+            cacheRatio: 0.25,
+            hiddenInputOverheadRatio: 0.2,
+            reasoningOutputOverheadRatio: 0.3
+          }
+        },
+        provenance: 'estimated'
+      }
+    });
+    await tx.done;
+    db.close();
+
+    const report = await buildAnalyticsExport(analysisId);
+    const markdown = exportMarkdown(report);
+
+    expect(report.cost?.visibleApiEquivalentUsd).toBeCloseTo(2);
+    expect(report.cost?.scenario?.lowerUsd).toBe(1);
+    expect(markdown).toContain('Visible API-equivalent cost: $2');
+    expect(markdown).toContain('Scenario: $1–$2');
     expect(markdown).toContain('cacheRatio: 0.25');
     expect(markdown).toContain('hiddenInputOverheadRatio: 0.2');
     expect(markdown).toContain('reasoningOutputOverheadRatio: 0.3');
