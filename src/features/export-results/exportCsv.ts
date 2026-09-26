@@ -1,4 +1,8 @@
-import { sanitizeAnalyticsExport, type AnalyticsExport } from './exportJson';
+import {
+  sanitizeAnalyticsExport,
+  type AnalyticsExport,
+  type AnalyticsExportPrivacyOptions
+} from './exportJson';
 
 function startsWithFormulaAfterIgnoredPrefix(text: string): boolean {
   let index = 0;
@@ -14,29 +18,29 @@ function startsWithFormulaAfterIgnoredPrefix(text: string): boolean {
   return first === '=' || first === '+' || first === '-' || first === '@';
 }
 
-function csvCell(value: string | number | null | undefined): string {
+export function csvCell(value: string | number | null | undefined): string {
   let text = value === null || value === undefined ? '' : String(value);
   if (startsWithFormulaAfterIgnoredPrefix(text)) text = `'${text}`;
   if (/[",\r\n]/.test(text)) text = `"${text.replace(/"/g, '""')}"`;
   return text;
 }
 
-function row(values: Array<string | number | null | undefined>): string {
+export function csvRow(values: Array<string | number | null | undefined>): string {
   return values.map(csvCell).join(',');
 }
 
-export function exportCsv(value: AnalyticsExport): string {
-  const data = sanitizeAnalyticsExport(value);
-  const rows: string[] = [row(['section', 'name', 'value', 'provenance', 'detail'])];
+export function exportCsv(value: AnalyticsExport, options: AnalyticsExportPrivacyOptions = {}): string {
+  const data = sanitizeAnalyticsExport(value, options);
+  const rows: string[] = [csvRow(['section', 'name', 'value', 'provenance', 'detail'])];
 
-  rows.push(row(['overview', 'conversations', data.overview.conversations, 'observed', '']));
-  rows.push(row(['overview', 'messages', data.overview.messages, 'observed', '']));
-  rows.push(row(['overview', 'visible tokens', data.overview.visibleTokens, 'calculated', '']));
-  rows.push(row(['overview', 'peak day', data.overview.peakDay, 'calculated', '']));
-  rows.push(row(['overview', 'largest conversation', data.overview.largestConversationTitle, 'calculated', '']));
+  rows.push(csvRow(['overview', 'conversations', data.overview.conversations, 'observed', '']));
+  rows.push(csvRow(['overview', 'messages', data.overview.messages, 'observed', '']));
+  rows.push(csvRow(['overview', 'visible tokens', data.overview.visibleTokens, 'calculated', '']));
+  rows.push(csvRow(['overview', 'peak day', data.overview.peakDay, 'calculated', '']));
+  rows.push(csvRow(['overview', 'largest conversation', data.overview.largestConversationTitle, 'calculated', '']));
 
   for (const model of data.models) {
-    rows.push(row([
+    rows.push(csvRow([
       'model',
       model.modelId,
       model.visibleTokens,
@@ -46,9 +50,9 @@ export function exportCsv(value: AnalyticsExport): string {
   }
 
   for (const conversation of data.conversations) {
-    rows.push(row([
+    rows.push(csvRow([
       'conversation',
-      conversation.title,
+      conversation.title ?? '',
       conversation.visibleTokens,
       'calculated',
       `messages=${conversation.messages}; models=${conversation.modelIds.join(' | ')}`
@@ -56,7 +60,7 @@ export function exportCsv(value: AnalyticsExport): string {
   }
 
   if (data.cost?.visibleApiEquivalentUsd !== undefined) {
-    rows.push(row([
+    rows.push(csvRow([
       'cost',
       'visible API-equivalent USD',
       data.cost.visibleApiEquivalentUsd,
@@ -66,7 +70,7 @@ export function exportCsv(value: AnalyticsExport): string {
   }
   if (data.cost?.scenario) {
     const scenario = data.cost.scenario;
-    rows.push(row([
+    rows.push(csvRow([
       'cost',
       'scenario USD range',
       `${scenario.lowerUsd}-${scenario.upperUsd}`,
@@ -76,7 +80,7 @@ export function exportCsv(value: AnalyticsExport): string {
   }
 
   for (const price of data.cost?.pricing ?? []) {
-    rows.push(row([
+    rows.push(csvRow([
       'pricing',
       price.modelId,
       `${price.inputPerMillion}/${price.cachedInputPerMillion}/${price.outputPerMillion} USD per million`,
@@ -85,7 +89,7 @@ export function exportCsv(value: AnalyticsExport): string {
     ]));
   }
   for (const gap of data.cost?.coverageGaps ?? []) {
-    rows.push(row(['cost', 'pricing coverage gap', '', 'incomplete', gap]));
+    rows.push(csvRow(['cost', 'pricing coverage gap', '', 'incomplete', gap]));
   }
 
   return `${rows.join('\r\n')}\r\n`;
