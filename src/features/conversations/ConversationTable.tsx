@@ -39,7 +39,11 @@ export function ConversationTable({ rows, total, onSelect }: ConversationTablePr
             {virtualizer.getVirtualItems().map((item) => {
               const row = rows[item.index];
               if (!row) return null;
-              const signals = [row.hasWeb && 'web', row.hasFiles && 'files', row.hasTools && 'tools'].filter(Boolean).join(', ') || '—';
+              const signals = [
+                row.hasWeb && t('conversations.web'),
+                row.hasFiles && t('conversations.files'),
+                row.hasTools && t('conversations.tools')
+              ].filter(Boolean).join(', ') || '—';
               return (
                 <button
                   className="virtual-row virtual-data-row"
