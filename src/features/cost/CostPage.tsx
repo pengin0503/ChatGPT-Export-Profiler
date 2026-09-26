@@ -17,11 +17,6 @@ interface ScenarioView {
   request: CostScenarioRequest;
 }
 
-function milliseconds(timestamp: number): number {
-  return timestamp < 100_000_000_000 ? timestamp * 1000 : timestamp;
-}
-
-
 function latestPrice(modelId: string, pricing: readonly PricingRecord[]): PricingRecord | undefined {
   return pricing
     .filter((record) => record.model === modelId)
