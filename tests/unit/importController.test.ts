@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ImportController, type WorkerPort } from '../../src/features/import/importController';
 import type { PipelineMessage } from '../../src/import/pipelineProtocol';
+import type { ImportCheckpoint } from '../../src/storage/repositories';
 
 class RecordingWorker implements WorkerPort {
   readonly messages: PipelineMessage[] = [];
@@ -34,19 +35,23 @@ function successfulInspection() {
   };
 }
 
+function dependencies(importWorker = new RecordingWorker(), analysisWorker = new RecordingWorker()) {
+  return {
+    inspectZip: async () => successfulInspection(),
+    fingerprintImport: async () => ({ hash: 'synthetic-fingerprint' } as never),
+    createImportWorker: () => importWorker,
+    createAnalysisWorker: () => analysisWorker,
+    createAnalysis: async () => {},
+    updateAnalysisStatus: async () => {}
+  };
+}
+
 describe('ImportController', () => {
   it('sends the selected ZIP safety policy to the import worker', async () => {
     const policy = { maxEntries: 100_000, maxConversationBytes: 16 * 1024 ** 3, maxCompressionRatio: 500 };
     const importWorker = new RecordingWorker();
     const analysisWorker = new RecordingWorker();
-    const controller = new ImportController({
-      inspectZip: async () => successfulInspection(),
-      fingerprintImport: async () => ({ hash: 'synthetic-fingerprint' } as never),
-      createImportWorker: () => importWorker,
-      createAnalysisWorker: () => analysisWorker,
-      createAnalysis: async () => {},
-      updateAnalysisStatus: async () => {}
-    });
+    const controller = new ImportController({ ...dependencies(importWorker, analysisWorker) });
 
     await controller.start(new Blob(['synthetic ZIP bytes']), { profile: 'standard', zipSafetyPolicy: policy });
 
@@ -89,11 +94,7 @@ describe('ImportController', () => {
     const analysisWorker = new RecordingWorker();
     const updateAnalysisStatus = vi.fn(async () => {});
     const controller = new ImportController({
-      inspectZip: async () => successfulInspection(),
-      fingerprintImport: async () => ({ hash: 'synthetic-fingerprint' } as never),
-      createImportWorker: () => importWorker,
-      createAnalysisWorker: () => analysisWorker,
-      createAnalysis: async () => {},
+      ...dependencies(importWorker, analysisWorker),
       updateAnalysisStatus
     });
 
@@ -113,5 +114,31 @@ describe('ImportController', () => {
     await vi.waitFor(() => expect(updateAnalysisStatus).toHaveBeenCalledWith('analysis-failure-test', 'failed'));
     expect(importWorker.terminate).toHaveBeenCalled();
     expect(analysisWorker.terminate).toHaveBeenCalled();
+  });
+
+  it('uses model aliases pinned in the checkpoint instead of current settings when resuming', async () => {
+    const importWorker = new RecordingWorker();
+    const analysisWorker = new RecordingWorker();
+    const controller = new ImportController({ ...dependencies(importWorker, analysisWorker) });
+    const checkpoint: ImportCheckpoint = {
+      analysisId: 'analysis-resume',
+      fingerprint: 'synthetic-fingerprint',
+      stage: 'aggregation',
+      committedBatches: 2,
+      processedConversations: 100,
+      updatedAt: 123,
+      modelAliases: { 'raw-model': 'canonical-old' }
+    };
+
+    await controller.resume(new Blob(['synthetic ZIP bytes']), checkpoint, {
+      profile: 'standard',
+      modelAliases: { 'raw-model': 'canonical-new' }
+    });
+
+    expect(importWorker.messages).toContainEqual(expect.objectContaining({
+      type: 'START_IMPORT',
+      modelAliases: { 'raw-model': 'canonical-old' }
+    }));
+    controller.cancel();
   });
 });
