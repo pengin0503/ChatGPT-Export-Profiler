@@ -100,7 +100,7 @@ Automated WebKit/iPad viewport tests do **not** replace release testing on physi
 ## CI and delivery
 
 - `.github/workflows/ci.yml` runs the main quality gates on pushes and pull requests targeting `main`.
-- `.github/workflows/pages.yml` builds and deploys only `dist/` to GitHub Pages.
+- `.github/workflows/pages.yml` deploys only the exact `main` commit whose CI workflow completed successfully. GitHub Pages must be enabled once in repository **Settings → Pages → Build and deployment → Source: GitHub Actions**. The workflow intentionally does not try to create/enable the Pages site with `GITHUB_TOKEN`, because that operation requires repository-administration permission not granted to the normal Actions token.
 - `.github/workflows/release.yml` runs the release quality gate for `v*` tags and attaches the versioned offline ZIP to the GitHub Release.
 
 CI and test fixtures are synthetic. User exports, generated analysis databases, and local browser data are not CI artifacts.
