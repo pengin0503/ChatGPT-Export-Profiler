@@ -48,6 +48,6 @@ describe('Codex review export hardening regressions', () => {
     expect(markdown).not.toContain(htmlPayload);
     expect(markdown).not.toContain('](javascript:alert(1))');
     expect(markdown).toContain('&lt;img src=x onerror=alert(1)&gt;');
-    expect(markdown).toContain('\\[open\\]\\(javascript:alert\\(1\\)\\)');
+    expect(markdown).toContain('\\[open\\](javascript:alert(1))');
   });
 });
