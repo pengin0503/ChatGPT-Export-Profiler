@@ -1,4 +1,5 @@
 export const extendedEn = {
+  'status.loading': 'Loading…',
   'range.custom': 'Custom range',
   'range.from': 'From',
   'range.to': 'To',
@@ -82,6 +83,7 @@ export const extendedEn = {
 } as const;
 
 export const extendedJa: Record<keyof typeof extendedEn, string> = {
+  'status.loading': '読み込み中…',
   'range.custom': 'カスタム期間',
   'range.from': '開始',
   'range.to': '終了',

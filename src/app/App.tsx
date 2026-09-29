@@ -1,17 +1,36 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { navigationItems } from './navigation';
 import { useI18n } from '../i18n';
 import { ImportPage } from '../features/import/ImportPage';
 import { useImportSession, type ImportSummary } from '../features/import/useImportSession';
-import { OverviewPage } from '../features/overview/OverviewPage';
-import { ModelsPage } from '../features/models/ModelsPage';
-import { TimelinePage } from '../features/timeline/TimelinePage';
-import { ConversationsPage } from '../features/conversations/ConversationsPage';
-import { CostPage } from '../features/cost/CostPage';
-import { ToolsPage } from '../features/tools/ToolsPage';
-import { DataQualityPage } from '../features/data-quality/DataQualityPage';
-import { ComparisonPage } from '../features/comparison/ComparisonPage';
-import { SettingsPage } from '../features/settings/SettingsPage';
+
+const OverviewPage = lazy(() =>
+  import('../features/overview/OverviewPage').then(({ OverviewPage }) => ({ default: OverviewPage }))
+);
+const ModelsPage = lazy(() =>
+  import('../features/models/ModelsPage').then(({ ModelsPage }) => ({ default: ModelsPage }))
+);
+const TimelinePage = lazy(() =>
+  import('../features/timeline/TimelinePage').then(({ TimelinePage }) => ({ default: TimelinePage }))
+);
+const ConversationsPage = lazy(() =>
+  import('../features/conversations/ConversationsPage').then(({ ConversationsPage }) => ({ default: ConversationsPage }))
+);
+const CostPage = lazy(() =>
+  import('../features/cost/CostPage').then(({ CostPage }) => ({ default: CostPage }))
+);
+const ToolsPage = lazy(() =>
+  import('../features/tools/ToolsPage').then(({ ToolsPage }) => ({ default: ToolsPage }))
+);
+const DataQualityPage = lazy(() =>
+  import('../features/data-quality/DataQualityPage').then(({ DataQualityPage }) => ({ default: DataQualityPage }))
+);
+const ComparisonPage = lazy(() =>
+  import('../features/comparison/ComparisonPage').then(({ ComparisonPage }) => ({ default: ComparisonPage }))
+);
+const SettingsPage = lazy(() =>
+  import('../features/settings/SettingsPage').then(({ SettingsPage }) => ({ default: SettingsPage }))
+);
 
 type ActivePage =
   | 'import'
@@ -106,24 +125,26 @@ export function App() {
             onManageStorage={() => setActivePage('settings')}
           />
         ) : null}
-        {completed && activePage === 'overview' ? <OverviewPage analysisId={completed.analysisId} /> : null}
-        {completed && activePage === 'models' ? <ModelsPage analysisId={completed.analysisId} /> : null}
-        {completed && activePage === 'timeline' ? <TimelinePage analysisId={completed.analysisId} /> : null}
-        {completed && activePage === 'conversations' ? <ConversationsPage analysisId={completed.analysisId} /> : null}
-        {completed && activePage === 'cost' ? <CostPage analysisId={completed.analysisId} /> : null}
-        {completed && activePage === 'tools' ? <ToolsPage analysisId={completed.analysisId} /> : null}
-        {completed && activePage === 'data-quality' ? <DataQualityPage analysisId={completed.analysisId} /> : null}
-        {completed && activePage === 'comparison' ? <ComparisonPage analysisId={completed.analysisId} /> : null}
-        {activePage === 'settings' ? (
-          <SettingsPage
-            analysisId={completed?.analysisId}
-            protectedAnalysisId={protectedAnalysisId}
-            onAnalysisDeleted={() => {
-              setCompleted(undefined);
-              setActivePage('import');
-            }}
-          />
-        ) : null}
+        <Suspense fallback={<div className="panel" role="status">{t('status.loading')}</div>}>
+          {completed && activePage === 'overview' ? <OverviewPage analysisId={completed.analysisId} /> : null}
+          {completed && activePage === 'models' ? <ModelsPage analysisId={completed.analysisId} /> : null}
+          {completed && activePage === 'timeline' ? <TimelinePage analysisId={completed.analysisId} /> : null}
+          {completed && activePage === 'conversations' ? <ConversationsPage analysisId={completed.analysisId} /> : null}
+          {completed && activePage === 'cost' ? <CostPage analysisId={completed.analysisId} /> : null}
+          {completed && activePage === 'tools' ? <ToolsPage analysisId={completed.analysisId} /> : null}
+          {completed && activePage === 'data-quality' ? <DataQualityPage analysisId={completed.analysisId} /> : null}
+          {completed && activePage === 'comparison' ? <ComparisonPage analysisId={completed.analysisId} /> : null}
+          {activePage === 'settings' ? (
+            <SettingsPage
+              analysisId={completed?.analysisId}
+              protectedAnalysisId={protectedAnalysisId}
+              onAnalysisDeleted={() => {
+                setCompleted(undefined);
+                setActivePage('import');
+              }}
+            />
+          ) : null}
+        </Suspense>
       </main>
     </div>
   );
