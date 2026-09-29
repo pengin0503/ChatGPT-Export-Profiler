@@ -37,6 +37,6 @@ describe('active import storage protection', () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(screen.getByTestId('protected-analysis-id')).toHaveTextContent('analysis-running');
+    expect(await screen.findByTestId('protected-analysis-id')).toHaveTextContent('analysis-running');
   });
 });
