@@ -101,6 +101,7 @@ export function calculateHistoricalVisibleCost(
   const missingDates: string[] = [];
   const appliedPrices = new Map<string, PricingRecord>();
   for (const [day, usage] of days) {
+    if (usage.inputTokens === 0 && usage.outputTokens === 0) continue;
     const timestamp = Date.parse(`${day}T12:00:00.000Z`);
     const record = findPrice(modelId, timestamp, pricing);
     if (!record) {

@@ -1,4 +1,6 @@
 import type { ImportCheckpoint } from '../../storage/repositories';
+import { formatMessage, useI18n } from '../../i18n';
+import { stageLabel } from './stageLabel';
 
 export interface RecoveryPromptProps {
   checkpoint?: ImportCheckpoint;
@@ -6,17 +8,18 @@ export interface RecoveryPromptProps {
 }
 
 export function RecoveryPrompt({ checkpoint, cancelled = false }: RecoveryPromptProps) {
+  const { t } = useI18n();
   return (
     <section className="recovery-prompt" aria-labelledby="recovery-heading">
-      <p className="eyebrow">RECOVERY</p>
-      <h2 id="recovery-heading">{cancelled ? 'Import cancelled' : 'Resume local analysis'}</h2>
-      <p>Re-select the original ZIP to resume from the last committed checkpoint.</p>
+      <p className="eyebrow">{t('import.recoveryEyebrow')}</p>
+      <h2 id="recovery-heading">{cancelled ? t('import.cancelled') : t('import.resume')}</h2>
       {checkpoint ? (
         <p className="recovery-detail">
-          Saved after {checkpoint.processedConversations} conversations · stage {checkpoint.stage}
+          {t('import.reselect')}<br />
+          {formatMessage(t('import.saved'), { count: checkpoint.processedConversations, stage: stageLabel(t, checkpoint.stage) })}
         </p>
       ) : (
-        <p className="recovery-detail">No durable checkpoint is available; selecting a ZIP starts a new analysis.</p>
+        <p className="recovery-detail">{t('import.noCheckpoint')}</p>
       )}
     </section>
   );

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ImportPage } from '../../src/features/import/ImportPage';
 import type { ImportSessionModel, ImportSessionState } from '../../src/features/import/useImportSession';
+import { I18nContext, t } from '../../src/i18n';
 
 function session(state: ImportSessionState): ImportSessionModel {
   return {
@@ -16,6 +17,33 @@ function session(state: ImportSessionState): ImportSessionModel {
 }
 
 describe('ImportPage', () => {
+  it.each([
+    [{ status: 'running', analysisId: 'synthetic', stage: 'aggregation', processedConversations: 120, startedAt: Date.now(), warnings: [] }, 'ローカル解析中'],
+    [{ status: 'cancelled' }, 'インポートをキャンセルしました'],
+    [{ status: 'recoverable', checkpoint: { analysisId: 'synthetic', fingerprint: 'fp', stage: 'aggregation', committedBatches: 1, processedConversations: 120, updatedAt: 1 } }, 'ローカル解析を再開'],
+    [{ status: 'failed', code: 'ZIP_SAFETY_BLOCKED', messageKey: 'import.zipSafetyBlocked' }, 'ZIPはローカル安全検査を通過しませんでした。'],
+    [{ status: 'complete', analysisId: 'synthetic', summary: { conversations: 2, messages: 3, visibleTokens: 4 } }, '読み込み完了'],
+    [{ status: 'storage-pressure', file: new File(['synthetic'], 'export.zip'), checkpoint: { analysisId: 'synthetic', fingerprint: 'fp', stage: 'aggregation', committedBatches: 1, processedConversations: 120, updatedAt: 1 } }, 'ブラウザのストレージがいっぱいです']
+  ] as const)('translates the %s state into Japanese', (state, heading) => {
+    render(<I18nContext.Provider value={{ locale: 'ja', setLocale: vi.fn(), t: (key) => t(key, 'ja') }}>
+      <ImportPage session={session(state as ImportSessionState)} />
+    </I18nContext.Provider>);
+    expect(screen.getByRole('heading', { name: heading })).toBeVisible();
+    if (state.status === 'running') {
+      expect(screen.getByText('集計')).toBeVisible();
+      expect(screen.getByText('120件の会話を処理済み')).toBeVisible();
+      expect(screen.getByRole('button', { name: 'キャンセル' })).toBeVisible();
+    }
+    if (state.status === 'complete') expect(screen.getByText('会話2件 · メッセージ3件 · 可視トークン4')).toBeVisible();
+    if (state.status === 'storage-pressure') expect(screen.getByRole('button', { name: 'インポートを再試行' })).toBeVisible();
+  });
+  it('allows cancellation while inspecting the ZIP', async () => {
+    const model = session({ status: 'inspecting' });
+    render(<ImportPage session={model} />);
+    expect(screen.getByLabelText('Choose ChatGPT export ZIP')).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(model.cancel).toHaveBeenCalledOnce();
+  });
   it('shows an accessible ZIP picker and local-only privacy copy while idle', () => {
     render(<ImportPage session={session({ status: 'idle' })} />);
     expect(screen.getByLabelText('Choose ChatGPT export ZIP')).toBeInTheDocument();

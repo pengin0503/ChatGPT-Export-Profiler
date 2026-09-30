@@ -86,6 +86,33 @@ function dependencies(
 }
 
 describe('ImportController', () => {
+  it('does not emit a stale failure or terminate a replacement session after cancellation', async () => {
+    let finishFailure!: () => void;
+    const pending = new Promise<void>((resolve) => { finishFailure = resolve; });
+    const firstImport = new RecordingWorker();
+    const firstAnalysis = new RecordingWorker();
+    const nextImport = new RecordingWorker();
+    const nextAnalysis = new RecordingWorker();
+    const controller = new ImportController({
+      ...dependencies(),
+      createImportWorker: vi.fn().mockReturnValueOnce(firstImport).mockReturnValue(nextImport),
+      createAnalysisWorker: vi.fn().mockReturnValueOnce(firstAnalysis).mockReturnValue(nextAnalysis),
+      updateAnalysisStatus: async (_id, status) => { if (status === 'failed') await pending; }
+    });
+    const listener = vi.fn();
+    controller.subscribe(listener);
+    await controller.start(new Blob(['synthetic']), { profile: 'standard', analysisId: 'first' });
+    firstImport.emit({ type: 'FAIL', code: 'IMPORT_STREAM_FAILED', stage: 'parsing', messageKey: 'import.streamFailed' });
+    controller.cancel();
+    await controller.start(new Blob(['synthetic']), { profile: 'standard', analysisId: 'next' });
+    finishFailure();
+    await pending;
+    await Promise.resolve();
+    expect(listener).not.toHaveBeenCalled();
+    expect(nextImport.terminate).not.toHaveBeenCalled();
+    expect(nextAnalysis.terminate).not.toHaveBeenCalled();
+    controller.cancel();
+  });
   it('starts an import for a valid sharded conversation inspection without a legacy single entry', async () => {
     const importWorker = new RecordingWorker();
     const analysisWorker = new RecordingWorker();

@@ -1,4 +1,5 @@
 import type { ZipInspection } from '../import/zipInspector';
+import { throwIfAborted } from '../import/abort';
 
 const SAMPLE_BYTES = 64 * 1024;
 const LEGACY_SAMPLE_COUNT = 3;
@@ -82,10 +83,13 @@ function copyConversationEntry(entry: FingerprintConversationEntry): Fingerprint
   };
 }
 
-export async function fingerprintImport(file: Blob, inspection: ZipInspection): Promise<ImportFingerprint> {
+export async function fingerprintImport(file: Blob, inspection: ZipInspection, signal?: AbortSignal): Promise<ImportFingerprint> {
+  throwIfAborted(signal);
   const source = file as BlobWithModified;
   const samples = await readSamples(file, CONTENT_SAMPLE_COUNT);
+  throwIfAborted(signal);
   const legacySamples = await readSamples(file, LEGACY_SAMPLE_COUNT);
+  throwIfAborted(signal);
   const conversationEntry = inspection.conversationEntry
     ? copyConversationEntry(inspection.conversationEntry)
     : undefined;
@@ -126,6 +130,7 @@ export async function fingerprintImport(file: Blob, inspection: ZipInspection): 
     digestMetadataAndSamples(contentMetadata, samples),
     digestMetadataAndSamples(legacyMetadata, legacySamples)
   ]);
+  throwIfAborted(signal);
 
   return {
     hash,

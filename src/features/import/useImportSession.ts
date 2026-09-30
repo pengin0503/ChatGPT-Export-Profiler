@@ -77,12 +77,31 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
   const enabled = options.enabled ?? true;
   const controller = useMemo(() => new ImportController(), []);
   const activeFileRef = useRef<File | undefined>(undefined);
+  const operationRef = useRef<AbortController | undefined>(undefined);
+  const activeAnalysisIdRef = useRef<string | undefined>(undefined);
+  const resumeCheckpointRef = useRef<ImportCheckpoint | undefined>(undefined);
   const [state, setState] = useState<ImportSessionState>({ status: 'idle' });
+
+  const isActive = useCallback((operation: AbortController) =>
+    operationRef.current === operation && !operation.signal.aborted, []);
+
+  const beginOperation = useCallback(() => {
+    operationRef.current?.abort();
+    controller.cancel();
+    const operation = new AbortController();
+    operationRef.current = operation;
+    activeAnalysisIdRef.current = undefined;
+    resumeCheckpointRef.current = undefined;
+    activeFileRef.current = undefined;
+    return operation;
+  }, [controller]);
 
   useEffect(() => {
     if (!enabled) return undefined;
 
-    return controller.subscribe((event) => {
+    const unsubscribe = controller.subscribe((event) => {
+      const operation = operationRef.current;
+      if (!operation || !isActive(operation)) return;
       if (event.type === 'PROGRESS') {
         setState((current) => current.status === 'running'
           ? { ...current, stage: event.stage, processedConversations: event.processedConversations }
@@ -108,12 +127,21 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
         return;
       }
       if (event.type === 'COMPLETE' && event.source === 'analysis') {
+        if (event.analysisId !== activeAnalysisIdRef.current) return;
         void readSummary(event.analysisId)
-          .then((summary) => setState({ status: 'complete', analysisId: event.analysisId, summary }))
-          .catch((error: unknown) => setState(failureState(error)));
+          .then((summary) => {
+            if (isActive(operation)) setState({ status: 'complete', analysisId: event.analysisId, summary });
+          })
+          .catch((error: unknown) => { if (isActive(operation)) setState(failureState(error)); });
       }
     });
-  }, [controller, enabled]);
+    return () => {
+      unsubscribe();
+      operationRef.current?.abort();
+      operationRef.current = undefined;
+      controller.cancel();
+    };
+  }, [controller, enabled, isActive]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -132,8 +160,11 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
     return () => { active = false; };
   }, [enabled]);
 
-  const resumeFromCheckpoint = useCallback(async (file: File, checkpoint: ImportCheckpoint): Promise<void> => {
+  const resumeFromCheckpoint = useCallback(async (file: File, checkpoint: ImportCheckpoint, operation: AbortController): Promise<void> => {
+    if (!isActive(operation)) return;
     activeFileRef.current = file;
+    activeAnalysisIdRef.current = checkpoint.analysisId;
+    resumeCheckpointRef.current = checkpoint;
     setState({
       status: 'running',
       analysisId: checkpoint.analysisId,
@@ -148,20 +179,23 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
         loadZipSafetyPolicy(),
         loadModelAliases()
       ]);
+      if (!isActive(operation)) return;
       await controller.resume(file, checkpoint, { profile, zipSafetyPolicy, modelAliases });
     } catch (error) {
-      if (isAbortError(error)) return;
+      if (!isActive(operation) || isAbortError(error)) return;
       if (isRetryableResumeSelectionError(error)) {
         setState({ status: 'recoverable', checkpoint });
         return;
       }
       setState(failureState(error));
     }
-  }, [controller]);
+  }, [controller, isActive]);
 
-  const startFresh = useCallback(async (file: File): Promise<void> => {
+  const startFresh = useCallback(async (file: File, operation: AbortController): Promise<void> => {
+    if (!isActive(operation)) return;
     const analysisId = crypto.randomUUID();
     activeFileRef.current = file;
+    activeAnalysisIdRef.current = analysisId;
     setState({
       status: 'running',
       analysisId,
@@ -176,73 +210,87 @@ export function useImportSession(options: UseImportSessionOptions = {}): ImportS
         loadZipSafetyPolicy(),
         loadModelAliases()
       ]);
+      if (!isActive(operation)) return;
       await controller.start(file, { profile, analysisId, zipSafetyPolicy, modelAliases });
     } catch (error) {
-      if (isAbortError(error)) return;
+      if (!isActive(operation) || isAbortError(error)) return;
       setState(failureState(error));
     }
-  }, [controller]);
+  }, [controller, isActive]);
 
   const selectFile = useCallback(async (file: File): Promise<void> => {
+    const operation = beginOperation();
     const checkpoint = state.status === 'recoverable'
       ? state.checkpoint
       : state.status === 'cancelled' ? state.checkpoint : undefined;
 
     if (checkpoint) {
-      await resumeFromCheckpoint(file, checkpoint);
+      await resumeFromCheckpoint(file, checkpoint, operation);
       return;
     }
 
     setState({ status: 'inspecting' });
     try {
       const zipSafetyPolicy = await loadZipSafetyPolicy();
-      const inspection = await inspectExportZip(file, zipSafetyPolicy);
+      if (!isActive(operation)) return;
+      const inspection = await inspectExportZip(file, zipSafetyPolicy, operation.signal);
+      if (!isActive(operation)) return;
       const hasConversationPayload = Boolean(inspection.conversationEntry) || Boolean(inspection.conversationEntries?.length);
       if (!inspection.ok || !hasConversationPayload) {
         setState({ status: 'failed', code: 'ZIP_SAFETY_BLOCKED', messageKey: 'import.zipSafetyBlocked' });
         return;
       }
 
-      const fingerprint = await fingerprintImport(file, inspection);
+      const fingerprint = await fingerprintImport(file, inspection, operation.signal);
+      if (!isActive(operation)) return;
       const analyses = await analysisRepository.list();
+      if (!isActive(operation)) return;
       const existing = newestCompletedAnalysis(analyses, fingerprint.hash)
         ?? (fingerprint.legacyHash ? newestCompletedAnalysis(analyses, fingerprint.legacyHash) : undefined);
       if (existing) {
         setState({ status: 'duplicate', file, existingAnalysisId: existing.id, fingerprint: existing.fingerprint });
         return;
       }
-      await startFresh(file);
+      await startFresh(file, operation);
     } catch (error) {
-      if (isAbortError(error)) return;
+      if (!isActive(operation) || isAbortError(error)) return;
       setState(failureState(error));
     }
-  }, [resumeFromCheckpoint, startFresh, state]);
+  }, [beginOperation, isActive, resumeFromCheckpoint, startFresh, state]);
 
   const cancel = useCallback(() => {
+    operationRef.current?.abort();
+    operationRef.current = undefined;
     controller.cancel();
-    const checkpoint = controller.getLatestCheckpoint();
+    const latest = controller.getLatestCheckpoint();
+    const checkpoint = latest?.analysisId === activeAnalysisIdRef.current ? latest : resumeCheckpointRef.current;
+    activeFileRef.current = undefined;
+    activeAnalysisIdRef.current = undefined;
     setState({ status: 'cancelled', checkpoint });
   }, [controller]);
 
   const openExisting = useCallback(async (): Promise<void> => {
     if (state.status !== 'duplicate') return;
+    const operation = beginOperation();
     try {
       const summary = await readSummary(state.existingAnalysisId);
+      if (!isActive(operation)) return;
       setState({ status: 'complete', analysisId: state.existingAnalysisId, summary });
     } catch (error) {
+      if (!isActive(operation)) return;
       setState(failureState(error));
     }
-  }, [state]);
+  }, [beginOperation, isActive, state]);
 
   const reanalyze = useCallback(async (): Promise<void> => {
     if (state.status !== 'duplicate') return;
-    await startFresh(state.file);
-  }, [startFresh, state]);
+    await startFresh(state.file, beginOperation());
+  }, [beginOperation, startFresh, state]);
 
   const retryImport = useCallback(async (): Promise<void> => {
     if (state.status !== 'storage-pressure') return;
-    await resumeFromCheckpoint(state.file, state.checkpoint);
-  }, [resumeFromCheckpoint, state]);
+    await resumeFromCheckpoint(state.file, state.checkpoint, beginOperation());
+  }, [beginOperation, resumeFromCheckpoint, state]);
 
   return { state, selectFile, cancel, openExisting, reanalyze, retryImport };
 }

@@ -101,11 +101,12 @@ async function runImport(message: StartImportMessage): Promise<void> {
     }
   } catch (error) {
     if (signal.aborted) return;
+    const code = errorCode(error);
     scope.postMessage({
       type: 'FAIL',
-      code: errorCode(error),
+      code,
       stage: 'parsing',
-      messageKey: 'import.streamFailed'
+      messageKey: code === 'CONVERSATION_TOO_LARGE' ? 'import.conversationTooLarge' : 'import.streamFailed'
     });
   }
 }

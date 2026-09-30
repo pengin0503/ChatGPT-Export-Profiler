@@ -65,7 +65,7 @@ export interface StoredModelMetric {
   rawAliases: string[];
   firstTimestamp?: number;
   lastTimestamp?: number;
-  usageByDay: Record<string, { inputTokens: number; outputTokens: number }>;
+  usageByDay: Record<string, StoredModelTokenUsage>;
 }
 
 export type TimelineKind = 'hour' | 'day' | 'week' | 'month' | 'year';
@@ -540,9 +540,10 @@ export async function getModelMetrics(analysisId: string): Promise<StoredModelMe
           for (const [day, usage] of Object.entries(value.usageByDay)) {
             if (typeof usage !== 'object' || usage === null || Array.isArray(usage)) continue;
             const daily = usage as Record<string, unknown>;
-            const existing = target.usageByDay[day] ?? { inputTokens: 0, outputTokens: 0 };
+            const existing = target.usageByDay[day] ?? { inputTokens: 0, outputTokens: 0, otherTokens: 0 };
             existing.inputTokens += number(daily.inputTokens);
             existing.outputTokens += number(daily.outputTokens);
+            existing.otherTokens = number(existing.otherTokens) + number(daily.otherTokens);
             target.usageByDay[day] = existing;
           }
         }
@@ -571,7 +572,7 @@ export async function getTopModelId(analysisId: string, range?: DateRange): Prom
     let visibleTokens = 0;
     if (entries.length > 0) {
       for (const [day, usage] of entries) {
-        if (dayInRange(day, range)) visibleTokens += usage.inputTokens + usage.outputTokens;
+        if (dayInRange(day, range)) visibleTokens += usage.inputTokens + usage.outputTokens + number(usage.otherTokens);
       }
     } else {
       const fallbackRow: ConversationMetricRecord = {
@@ -606,13 +607,14 @@ function mergeTimelineUsage(
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return;
   for (const [day, modelValue] of Object.entries(raw)) {
     if (typeof modelValue !== 'object' || modelValue === null || Array.isArray(modelValue)) continue;
-    const dayTarget = target[day] ?? {};
+    const dayTarget: Record<string, StoredModelTokenUsage> = target[day] ?? Object.create(null);
     for (const [modelId, usageValue] of Object.entries(modelValue)) {
       if (typeof usageValue !== 'object' || usageValue === null || Array.isArray(usageValue)) continue;
       const usage = usageValue as Record<string, unknown>;
-      const current = dayTarget[modelId] ?? { inputTokens: 0, outputTokens: 0 };
+      const current = dayTarget[modelId] ?? { inputTokens: 0, outputTokens: 0, otherTokens: 0 };
       current.inputTokens += number(usage.inputTokens);
       current.outputTokens += number(usage.outputTokens);
+      current.otherTokens = number(current.otherTokens) + number(usage.otherTokens);
       dayTarget[modelId] = current;
     }
     target[day] = dayTarget;

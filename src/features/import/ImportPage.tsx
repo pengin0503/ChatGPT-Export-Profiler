@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ChangeEvent } from 'react';
 import { StoragePressureNotice } from '../../components/StoragePressureNotice';
-import { isTranslationKey, useI18n } from '../../i18n';
+import { formatMessage, isTranslationKey, useI18n } from '../../i18n';
 import { ImportProgress } from './ImportProgress';
 import { RecoveryPrompt } from './RecoveryPrompt';
 import {
@@ -38,7 +38,7 @@ export function ImportPage({ session, onComplete, onManageStorage }: ImportPageP
 
   return (
     <div className="import-page">
-      <section className="privacy-card" aria-label="Privacy">
+      <section className="privacy-card" aria-label={t('import.privacy')}>
         <span className="privacy-dot" aria-hidden="true" />
         <p data-testid="privacy-copy">{t('privacy.local')}</p>
       </section>
@@ -49,7 +49,7 @@ export function ImportPage({ session, onComplete, onManageStorage }: ImportPageP
 
       {model.state.status === 'duplicate' ? (
         <section className="import-state-card" aria-labelledby="duplicate-heading">
-          <p className="eyebrow">EXISTING ANALYSIS</p>
+          <p className="eyebrow">{t('import.existingEyebrow')}</p>
           <h2 id="duplicate-heading">{t('import.duplicate')}</h2>
           <p>{t('import.duplicateDetail')}</p>
           <div className="action-row">
@@ -77,7 +77,7 @@ export function ImportPage({ session, onComplete, onManageStorage }: ImportPageP
 
       {model.state.status === 'failed' ? (
         <section className="import-state-card import-error" role="alert">
-          <p className="eyebrow">IMPORT BLOCKED</p>
+          <p className="eyebrow">{t('import.blockedEyebrow')}</p>
           <h2>{model.state.code === 'ZIP_SAFETY_BLOCKED' ? t('import.safetyBlocked') : t('import.failed')}</h2>
           <p>{isTranslationKey(model.state.messageKey) ? t(model.state.messageKey) : t('import.failed')}</p>
         </section>
@@ -85,11 +85,10 @@ export function ImportPage({ session, onComplete, onManageStorage }: ImportPageP
 
       {model.state.status === 'complete' ? (
         <section className="import-state-card" aria-labelledby="complete-heading">
-          <p className="eyebrow">COMPLETE</p>
+          <p className="eyebrow">{t('import.completeEyebrow')}</p>
           <h2 id="complete-heading">{t('import.complete')}</h2>
           <p>
-            {model.state.summary.conversations} conversations · {model.state.summary.messages} messages ·{' '}
-            {model.state.summary.visibleTokens} visible tokens
+            {formatMessage(t('import.summary'), { conversations: model.state.summary.conversations, messages: model.state.summary.messages, tokens: model.state.summary.visibleTokens })}
           </p>
         </section>
       ) : null}
@@ -111,6 +110,9 @@ export function ImportPage({ session, onComplete, onManageStorage }: ImportPageP
               disabled={model.state.status === 'inspecting'}
             />
           </label>
+          {model.state.status === 'inspecting' ? (
+            <button type="button" className="secondary-action" onClick={model.cancel}>{t('import.cancel')}</button>
+          ) : null}
         </section>
       ) : null}
     </div>

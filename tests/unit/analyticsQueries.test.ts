@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openProfilerDb, PROFILER_DB_NAME, type ConversationMetricRecord } from '../../src/storage/db';
-import { getOverviewMetrics, queryConversationMetrics } from '../../src/storage/analyticsQueries';
+import { getOverviewMetrics, getTopModelId, queryConversationMetrics } from '../../src/storage/analyticsQueries';
 
 const ts = (iso: string) => Date.parse(iso) / 1000;
 
@@ -77,6 +77,24 @@ async function seed(): Promise<void> {
 afterEach(resetDb);
 
 describe('analytics read model', () => {
+  it('ranks all visible roles consistently across batches and date ranges', async () => {
+    const db = await openProfilerDb();
+    const tx = db.transaction('modelMetrics', 'readwrite');
+    for (const [localKey, modelId, inputTokens, otherTokens] of [
+      ['1:a', 'a', 0, 300], ['2:a', 'a', 0, 400], ['1:b', 'b', 500, 0]
+    ] as const) {
+      await tx.store.put({ analysisId: 'synthetic-roles', localKey, value: {
+        modelId, messages: 1, conversations: 1, visibleTokens: inputTokens + otherTokens,
+        inputTokens, outputTokens: 0, otherTokens, rawAliases: [],
+        usageByDay: { '2026-01-01': { inputTokens, outputTokens: 0, otherTokens } }
+      } });
+    }
+    await tx.done;
+    db.close();
+    expect(await getTopModelId('synthetic-roles')).toBe('a');
+    expect(await getTopModelId('synthetic-roles', { from: ts('2026-01-01T00:00:00Z'), to: ts('2026-01-02T00:00:00Z') })).toBe('a');
+    expect(await getTopModelId('synthetic-roles', { from: ts('2026-01-03T00:00:00Z') })).toBeUndefined();
+  });
   it('filters by date and model, sorts, and paginates without loading message bodies', async () => {
     await seed();
     const result = await queryConversationMetrics('analysis-1', {

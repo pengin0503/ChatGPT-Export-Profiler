@@ -43,8 +43,8 @@ export interface ImportSessionStartResult {
 export type ImportControllerEvent = Exclude<PipelineMessage, StartImportMessage>;
 
 interface ImportControllerDependencies {
-  inspectZip(file: Blob, policy?: ZipSafetyPolicy): Promise<ZipInspection>;
-  fingerprintImport(file: Blob, inspection: ZipInspection): Promise<ImportFingerprint>;
+  inspectZip(file: Blob, policy?: ZipSafetyPolicy, signal?: AbortSignal): Promise<ZipInspection>;
+  fingerprintImport(file: Blob, inspection: ZipInspection, signal?: AbortSignal): Promise<ImportFingerprint>;
   createImportWorker(): WorkerPort;
   createAnalysisWorker(): WorkerPort;
   createAnalysis(record: AnalysisRecord): Promise<void>;
@@ -100,6 +100,7 @@ export class ImportController {
   private analysisListener?: (event: MessageEvent<PipelineMessage>) => void;
   private startupGeneration = 0;
   private activeAnalysisId?: string;
+  private startupAbort?: AbortController;
 
   constructor(dependencies: Partial<ImportControllerDependencies> = {}) {
     this.dependencies = { ...DEFAULT_DEPENDENCIES, ...dependencies };
@@ -119,14 +120,17 @@ export class ImportController {
   }
 
   async start(file: Blob, options: ImportStartOptions): Promise<ImportSessionStartResult> {
+    this.cancel();
     const generation = ++this.startupGeneration;
-    const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
+    const startup = new AbortController();
+    this.startupAbort = startup;
+    const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy, startup.signal);
     this.assertActiveGeneration(generation);
     if (!inspection.ok || !hasConversationPayload(inspection)) {
       throw new ImportPipelineError('ZIP_SAFETY_BLOCKED', 'inspection', 'import.zipSafetyBlocked');
     }
 
-    const fingerprint = await this.dependencies.fingerprintImport(file, inspection);
+    const fingerprint = await this.dependencies.fingerprintImport(file, inspection, startup.signal);
     this.assertActiveGeneration(generation);
     const analysisId = options.analysisId ?? crypto.randomUUID();
     await this.dependencies.createAnalysis({
@@ -152,20 +156,23 @@ export class ImportController {
   }
 
   async resume(file: Blob, checkpoint: ImportCheckpoint, options: ImportResumeOptions = {}): Promise<ImportSessionStartResult> {
+    this.cancel();
     const generation = ++this.startupGeneration;
+    const startup = new AbortController();
+    this.startupAbort = startup;
     const analysis = await this.dependencies.getAnalysis(checkpoint.analysisId);
     this.assertActiveGeneration(generation);
     if (!isResumeCompatibleAnalysis(analysis)) {
       throw new ImportPipelineError('ANALYSIS_VERSION_MISMATCH', 'inspection', 'import.analysisVersionMismatch');
     }
 
-    const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy);
+    const inspection = await this.dependencies.inspectZip(file, options.zipSafetyPolicy, startup.signal);
     this.assertActiveGeneration(generation);
     if (!inspection.ok || !hasConversationPayload(inspection)) {
       throw new ImportPipelineError('ZIP_SAFETY_BLOCKED', 'inspection', 'import.zipSafetyBlocked');
     }
 
-    const fingerprint = await this.dependencies.fingerprintImport(file, inspection);
+    const fingerprint = await this.dependencies.fingerprintImport(file, inspection, startup.signal);
     this.assertActiveGeneration(generation);
     if (fingerprint.hash !== checkpoint.fingerprint && fingerprint.legacyHash !== checkpoint.fingerprint) {
       throw new ImportPipelineError('FINGERPRINT_MISMATCH', 'inspection', 'import.fingerprintMismatch');
@@ -187,12 +194,14 @@ export class ImportController {
 
   cancel(): void {
     this.startupGeneration += 1;
+    this.startupAbort?.abort();
+    this.startupAbort = undefined;
     this.importWorker?.postMessage({ type: 'CANCEL' });
     this.analysisWorker?.postMessage({ type: 'CANCEL' });
     const analysisId = this.activeAnalysisId;
     this.activeAnalysisId = undefined;
     this.shutdownWorkers();
-    if (analysisId) void this.dependencies.updateAnalysisStatus(analysisId, 'cancelled');
+    if (analysisId) void this.dependencies.updateAnalysisStatus(analysisId, 'cancelled').catch(() => undefined);
   }
 
   private beginWorkers(
@@ -210,8 +219,9 @@ export class ImportController {
     this.importWorker = importWorker;
     this.analysisWorker = analysisWorker;
 
-    this.importListener = (event) => this.onImportMessage(event.data);
-    this.analysisListener = (event) => this.onAnalysisMessage(event.data);
+    const generation = this.startupGeneration;
+    this.importListener = (event) => { if (generation === this.startupGeneration) this.onImportMessage(event.data); };
+    this.analysisListener = (event) => { if (generation === this.startupGeneration) this.onAnalysisMessage(event.data); };
     importWorker.addEventListener('message', this.importListener);
     analysisWorker.addEventListener('message', this.analysisListener);
 
@@ -227,12 +237,18 @@ export class ImportController {
   }
 
   private async handleFailure(message: Extract<PipelineMessage, { type: 'FAIL' }>): Promise<void> {
+    const generation = this.startupGeneration;
     this.captureFailureCheckpoint(message);
     const analysisId = this.activeAnalysisId;
-    if (analysisId) await this.dependencies.updateAnalysisStatus(analysisId, 'failed');
-    this.emit(message);
-    this.activeAnalysisId = undefined;
-    this.shutdownWorkers();
+    try {
+      if (analysisId) await this.dependencies.updateAnalysisStatus(analysisId, 'failed');
+    } finally {
+      if (generation === this.startupGeneration) {
+        this.emit(message);
+        this.activeAnalysisId = undefined;
+        this.shutdownWorkers();
+      }
+    }
   }
 
   private onImportMessage(message: PipelineMessage): void {
@@ -246,7 +262,7 @@ export class ImportController {
       return;
     }
     if (message.type === 'FAIL') {
-      void this.handleFailure(message);
+      void this.handleFailure(message).catch(() => undefined);
       return;
     }
     if (message.type !== 'START_IMPORT') this.emit(message);
@@ -266,7 +282,7 @@ export class ImportController {
       return;
     }
     if (message.type === 'FAIL') {
-      void this.handleFailure(message);
+      void this.handleFailure(message).catch(() => undefined);
       return;
     }
     if (message.type !== 'START_IMPORT' && message.type !== 'BATCH') this.emit(message);
