@@ -1,4 +1,5 @@
 import { BlobReader, TextWriter, ZipReader } from '@zip.js/zip.js';
+import { throwIfAborted } from './abort';
 
 export const DEFAULT_ZIP_SAFETY = {
   maxEntries: 50_000,
@@ -103,13 +104,20 @@ function validateManifestValue(value: unknown, selectedShardNames: string[]): 'i
 
 export async function inspectExportZip(
   file: Blob,
-  policy: ZipSafetyPolicy = DEFAULT_ZIP_SAFETY
+  policy: ZipSafetyPolicy = DEFAULT_ZIP_SAFETY,
+  signal?: AbortSignal
 ): Promise<ZipInspection> {
   const blockingIssues: ZipBlockingIssue[] = [];
   const zipReader = new ZipReader(new BlobReader(file));
 
   try {
-    const entries = await zipReader.getEntries({ filenameValidation: 'tolerant' });
+    throwIfAborted(signal);
+    const entries: Awaited<ReturnType<typeof zipReader.getEntries>> = [];
+    for await (const entry of zipReader.getEntriesGenerator({ filenameValidation: 'tolerant' })) {
+      throwIfAborted(signal);
+      entries.push(entry);
+    }
+    throwIfAborted(signal);
     if (entries.length > policy.maxEntries) {
       blockingIssues.push({ code: 'TOO_MANY_ENTRIES', detail: String(entries.length) });
     }
@@ -148,14 +156,6 @@ export async function inspectExportZip(
     if (ambiguousConversationPayload) {
       blockingIssues.push({ code: 'DUPLICATE_CONVERSATIONS' });
     }
-    if (!ambiguousConversationPayload && shardCandidates.length > 0) {
-      const indices = shardCandidates.map(({ index }) => index);
-      const missingKnownStart = manifestCandidates.length === 0 && indices[0] !== 0;
-      if (!shardsAreContiguous(indices) || missingKnownStart) {
-        blockingIssues.push({ code: 'INCOMPLETE_CONVERSATION_SHARDS' });
-      }
-    }
-
     const selectedEntries = ambiguousConversationPayload
       ? []
       : monolithicCandidates.length === 1
@@ -166,19 +166,30 @@ export async function inspectExportZip(
       blockingIssues.push({ code: 'CONVERSATIONS_TOO_LARGE', detail: String(totalConversationBytes) });
     }
 
+    let manifestAuthoritative = false;
     if (!ambiguousConversationPayload && shardCandidates.length > 0 && manifestCandidates.length > 0) {
       const manifestEntry = manifestCandidates[0];
       if (manifestCandidates.length !== 1 || manifestEntry.uncompressedSize > MAX_MANIFEST_BYTES || !('getData' in manifestEntry)) {
         blockingIssues.push({ code: 'INVALID_EXPORT_MANIFEST' });
       } else {
         try {
-          const manifestText = await manifestEntry.getData(new TextWriter());
+          const manifestText = await manifestEntry.getData(new TextWriter(), { signal });
+          throwIfAborted(signal);
           const validation = validateManifestValue(JSON.parse(manifestText), shardCandidates.map(({ entry }) => entry.filename));
+          manifestAuthoritative = validation === 'ok';
           if (validation === 'invalid') blockingIssues.push({ code: 'INVALID_EXPORT_MANIFEST' });
           if (validation === 'mismatch') blockingIssues.push({ code: 'MANIFEST_SHARD_MISMATCH' });
         } catch {
+          throwIfAborted(signal);
           blockingIssues.push({ code: 'INVALID_EXPORT_MANIFEST' });
         }
+      }
+    }
+
+    if (!ambiguousConversationPayload && shardCandidates.length > 0) {
+      const indices = shardCandidates.map(({ index }) => index);
+      if (!shardsAreContiguous(indices) || (!manifestAuthoritative && indices[0] !== 0)) {
+        blockingIssues.push({ code: 'INCOMPLETE_CONVERSATION_SHARDS' });
       }
     }
 
@@ -195,6 +206,7 @@ export async function inspectExportZip(
       blockingIssues
     };
   } catch (error) {
+    throwIfAborted(signal);
     return {
       ok: false,
       entryCount: 0,

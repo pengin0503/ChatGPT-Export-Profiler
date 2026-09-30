@@ -4,6 +4,31 @@ import { DEFAULT_ZIP_SAFETY, inspectExportZip } from '../../src/import/zipInspec
 import { makeZip } from '../helpers/makeZip';
 
 describe('inspectExportZip', () => {
+  it('propagates cancellation instead of reporting an invalid ZIP', async () => {
+    const abort = new AbortController();
+    abort.abort();
+    await expect(inspectExportZip(new Blob(['synthetic']), undefined, abort.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  });
+  it.each([{}, { logical_files: {} }, { future_schema: true }])('requires shard zero with an ignored manifest %j', async (manifest) => {
+    const file = await makeZip([
+      { name: 'conversations-1.json', text: '[]' },
+      { name: 'conversations-2.json', text: '[]' },
+      { name: 'export_manifest.json', text: JSON.stringify(manifest) }
+    ]);
+    const result = await inspectExportZip(file);
+    expect(result.ok).toBe(false);
+    expect(result.blockingIssues.map((issue) => issue.code)).toContain('INCOMPLETE_CONVERSATION_SHARDS');
+  });
+
+  it('accepts contiguous zero-based shards with an ignored manifest', async () => {
+    const file = await makeZip([
+      { name: 'conversations-0.json', text: '[]' },
+      { name: 'conversations-1.json', text: '[]' },
+      { name: 'export_manifest.json', text: '{}' }
+    ]);
+    expect((await inspectExportZip(file)).ok).toBe(true);
+  });
+
   it('accepts a normal synthetic export', async () => {
     const file = await makeZip([
       { name: 'conversations.json', text: JSON.stringify([{ id: 'synthetic-1', mapping: {} }]) },

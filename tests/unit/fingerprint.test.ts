@@ -27,6 +27,11 @@ function syntheticFile(text: string, lastModified = 1_790_000_000_000): Blob & {
 }
 
 describe('fingerprintImport', () => {
+  it('stops fingerprinting after cancellation', async () => {
+    const abort = new AbortController();
+    abort.abort();
+    await expect(fingerprintImport(syntheticFile('synthetic'), baseInspection, abort.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  });
   it('is stable for identical bytes and relevant metadata', async () => {
     const first = await fingerprintImport(syntheticFile('synthetic-export-a'), baseInspection);
     const second = await fingerprintImport(syntheticFile('synthetic-export-a'), baseInspection);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateScenarioCost,
+  calculateHistoricalVisibleCost,
   calculateVisibleCost,
   findPrice,
   type PricingRecord
@@ -44,6 +45,12 @@ describe('findPrice', () => {
 });
 
 describe('cost calculations', () => {
+  it('does not require a price for days containing only other-role tokens', () => {
+    const usage = { '2026-09-22': { inputTokens: 0, outputTokens: 0, otherTokens: 300 } };
+    expect(calculateHistoricalVisibleCost('synthetic-tool-model', usage, [])).toEqual({
+      cost: 0, missingDates: [], missingUsageHistory: false, appliedPrices: []
+    });
+  });
   it('calculates visible input and output cost', () => {
     expect(calculateVisibleCost(1_000_000, 500_000, record)).toBeCloseTo(4);
   });

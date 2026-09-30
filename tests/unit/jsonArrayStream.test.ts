@@ -20,13 +20,58 @@ function chunkUtf8(text: string, pattern: number[]): ReadableStream<Uint8Array> 
   });
 }
 
-async function collect(stream: ReadableStream<Uint8Array>, signal?: AbortSignal): Promise<string[]> {
+async function collect(stream: ReadableStream<Uint8Array>, signal?: AbortSignal, maxValueBytes?: number): Promise<string[]> {
   const values: string[] = [];
-  for await (const value of splitTopLevelJsonArray(stream, signal)) values.push(value);
+  for await (const value of splitTopLevelJsonArray(stream, signal, maxValueBytes)) values.push(value);
   return values;
 }
 
 describe('splitTopLevelJsonArray', () => {
+  it('limits each value separately and accepts the exact byte boundary', async () => {
+    expect(await collect(chunkUtf8('[{"id":1},{"id":2}]', [3]), undefined, 8)).toEqual(['{"id":1}', '{"id":2}']);
+    await expect(collect(chunkUtf8('[{"id":1}]', [3]), undefined, 7)).rejects.toMatchObject({ code: 'CONVERSATION_TOO_LARGE' });
+  });
+
+  it('enforces the default 32 MiB limit before materializing an oversized value', async () => {
+    const chunk = new TextEncoder().encode('x'.repeat(64 * 1024));
+    let pulls = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) controller.enqueue(new TextEncoder().encode('[{"text":"'));
+        else if (pulls <= 514) controller.enqueue(chunk);
+        else controller.close();
+      },
+      cancel() { cancelled = true; }
+    });
+    await expect(collect(stream)).rejects.toMatchObject({ code: 'CONVERSATION_TOO_LARGE' });
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThanOrEqual(514);
+  }, 15_000);
+
+  it('measures UTF-8 bytes across split multibyte characters', async () => {
+    const input = '[{"text":"日😀"}]';
+    expect(await collect(chunkUtf8(input, [1]), undefined, 18)).toEqual(['{"text":"日😀"}']);
+    await expect(collect(chunkUtf8(input, [1]), undefined, 17)).rejects.toMatchObject({ code: 'CONVERSATION_TOO_LARGE' });
+  });
+
+  it('cancels the source immediately when a value grows beyond the limit', async () => {
+    let cancelled = false;
+    let pulls = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 4) { controller.close(); return; }
+        controller.enqueue(new TextEncoder().encode(pulls === 1 ? '[{"text":"' : 'synthetic chunk'));
+      },
+      cancel() { cancelled = true; }
+    });
+    await expect(collect(stream, undefined, 20)).rejects.toMatchObject({ code: 'CONVERSATION_TOO_LARGE' });
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThan(5);
+  });
+
   it('survives UTF-8 chunk splits, escaped quotes, nested values, and braces inside strings', async () => {
     const input = JSON.stringify([
       { text: '} ] \\" 日本語', nested: { value: [1, 2, 3] } },

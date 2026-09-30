@@ -52,12 +52,11 @@ export class QualityCollector {
   private readonly tokenCoverage: MutableCoverage = { attempted: 0, identified: 0 };
 
   private addIssue(severity: QualitySeverity, code: string): void {
+    if (this.issues.length >= MAX_QUALITY_ISSUE_DETAILS) return;
     const key = `${severity}\u0000${code}`;
     if (this.issueKeys.has(key)) return;
     this.issueKeys.add(key);
-    if (this.issues.length < MAX_QUALITY_ISSUE_DETAILS) {
-      this.issues.push({ severity, code });
-    }
+    this.issues.push({ severity, code });
   }
 
   addFatal(code: string): void {

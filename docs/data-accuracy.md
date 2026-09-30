@@ -35,6 +35,8 @@ For sharded exports, the importer rejects duplicate shard indices and gaps in th
 
 The profiler does not require conversation shards to be rewritten or uploaded elsewhere. ZIP inspection, decompression, manifest consistency checks, parsing, and analysis remain local to the application.
 
+Each individual conversation JSON value is limited to 32 MiB of UTF-8 source data before it is parsed. This limit is separate from the archive-wide logical payload limit and applies under every performance profile. Oversized values stop the import with a size-limit message rather than attempting to materialize an unbounded object. The parser flattens small text chunks while buffering a value to avoid retaining a string node for every character.
+
 ## Token counts
 
 Token counts are reconstructed locally from text available in the export and the profiler's local tokenizer/model mapping. Important limitations include:
@@ -113,6 +115,8 @@ For migration compatibility, the application can also compute the previous finge
 Each local analysis record stores application, analyzer, analysis-schema, tokenizer, and pricing-dataset version fields. These values are centralized in the application source rather than being independently hard-coded at import call sites. When parser/normalization/tokenizer semantics change, the corresponding analysis provenance version is advanced so old and new local analyses are distinguishable.
 
 Analysis schema/analyzer version 3 adds pricing-aware per-model daily usage within conversation and timeline aggregates. Older completed analyses remain readable where their stored fields are sufficient, but a fresh import is required to obtain v3-only metrics or resume an incomplete older analysis.
+
+Analysis schema/analyzer version 4 also stores per-model daily `otherTokens`. Top-model ranking uses all visible tokens (input, output, and other roles) consistently for all-time and dated ranges. Only valid dated messages contribute to a date range. Older completed analyses remain readable, but require a fresh import for complete v4 period ranking; incomplete older checkpoints cannot be resumed with the new semantics. Other-role tokens are not charged as API input/output tokens.
 
 When comparing results across application versions, treat changes in parser, normalization, tokenizer mapping, or pricing data as potential causes of metric differences.
 

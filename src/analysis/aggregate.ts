@@ -16,6 +16,7 @@ export interface AggregateTotals {
 export interface ModelTokenUsage {
   inputTokens: number;
   outputTokens: number;
+  otherTokens: number;
 }
 
 export interface AggregateBucket {
@@ -288,14 +289,11 @@ export function createAggregator() {
     bucket.toolEvents += message.toolEvents.length;
     bucket.conversationIds.add(conversationId);
     bucket.conversations = bucket.conversationIds.size;
-    if (role !== 'other') {
-      const day = bucket.usageByDay[dayKey] ?? {};
-      const usage = day[modelId] ?? { inputTokens: 0, outputTokens: 0 };
-      if (role === 'input') usage.inputTokens += tokenCount;
-      else usage.outputTokens += tokenCount;
-      day[modelId] = usage;
-      bucket.usageByDay[dayKey] = day;
-    }
+    const day: Record<string, ModelTokenUsage> = bucket.usageByDay[dayKey] ?? Object.create(null);
+    const usage = day[modelId] ?? { inputTokens: 0, outputTokens: 0, otherTokens: 0 };
+    usage[`${role}Tokens`] += tokenCount;
+    day[modelId] = usage;
+    bucket.usageByDay[dayKey] = day;
   }
 
   async function acceptConversation(conversation: NormalizedConversation): Promise<void> {
@@ -379,25 +377,21 @@ export function createAggregator() {
           outputTokens: 0,
           otherTokens: 0,
           modelIds: [],
-          byModel: {}
+          byModel: Object.create(null)
         };
         daily.messages += 1;
         daily.visibleTokens += tokenCount;
         daily[`${kind}Tokens`] += tokenCount;
         if (!daily.modelIds.includes(modelKey)) daily.modelIds.push(modelKey);
-        if (kind !== 'other') {
-          const modelUsage = daily.byModel[modelKey] ?? { inputTokens: 0, outputTokens: 0 };
-          if (kind === 'input') modelUsage.inputTokens += tokenCount;
-          else modelUsage.outputTokens += tokenCount;
-          daily.byModel[modelKey] = modelUsage;
-        }
+        const modelUsage = daily.byModel[modelKey] ?? { inputTokens: 0, outputTokens: 0, otherTokens: 0 };
+        modelUsage[`${kind}Tokens`] += tokenCount;
+        daily.byModel[modelKey] = modelUsage;
         summary.usageByDay[keys.day] = daily;
       }
 
-      if (keys && kind !== 'other') {
-        const usage = model.usageByDay[keys.day] ?? { inputTokens: 0, outputTokens: 0 };
-        if (kind === 'input') usage.inputTokens += tokenCount;
-        else usage.outputTokens += tokenCount;
+      if (keys) {
+        const usage = model.usageByDay[keys.day] ?? { inputTokens: 0, outputTokens: 0, otherTokens: 0 };
+        usage[`${kind}Tokens`] += tokenCount;
         model.usageByDay[keys.day] = usage;
       }
 

@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { resolveModel } from '../../src/analysis/modelRegistry';
 
 describe('resolveModel', () => {
+  it.each(['constructor', 'toString', '__proto__'])('preserves prototype-like model id %s as unknown', (raw) => {
+    expect(resolveModel(raw)).toEqual({ canonicalId: undefined, raw, confidence: 'unknown' });
+    expect(resolveModel(raw, Object.create(null))).toEqual({ canonicalId: undefined, raw, confidence: 'unknown' });
+  });
+
+  it('uses only explicit own properties of local alias overrides', () => {
+    const inherited = Object.create({ 'future-model': 'gpt-6-sol' });
+    expect(resolveModel('future-model', inherited).confidence).toBe('unknown');
+    expect(resolveModel('__proto__', Object.fromEntries([['__proto__', 'gpt-6-sol']]))).toEqual({
+      canonicalId: 'gpt-6-sol', raw: '__proto__', confidence: 'alias'
+    });
+  });
+
   it('resolves exact canonical model ids', () => {
     expect(resolveModel('gpt-6-sol')).toEqual({
       canonicalId: 'gpt-6-sol',

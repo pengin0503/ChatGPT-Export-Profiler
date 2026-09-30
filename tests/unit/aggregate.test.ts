@@ -40,6 +40,29 @@ function conversation(id: string, title: string, messages: NormalizedMessage[]):
 }
 
 describe('createAggregator', () => {
+  it('retains other-role tokens by model and day for consistent visible-token ranking', async () => {
+    const aggregator = createAggregator();
+    const item = message('synthetic', 'tool', 'assistant', 'synthetic tool text', epochSeconds('2026-09-22T10:00:00Z'), 'synthetic-tool-model');
+    item.role = 'tool';
+    await aggregator.acceptConversation(conversation('synthetic', 'Synthetic', [item]));
+    const result = aggregator.finish();
+    const expected = { inputTokens: 0, outputTokens: 0, otherTokens: result.totals.visibleTokens };
+    expect(expected.otherTokens).toBeGreaterThan(0);
+    expect(result.byModel['synthetic-tool-model'].usageByDay['2026-09-22']).toEqual(expected);
+    expect(result.conversations[0].usageByDay['2026-09-22'].byModel['synthetic-tool-model']).toEqual(expected);
+    expect(result.buckets.day['2026-09-22'].usageByDay['2026-09-22']['synthetic-tool-model']).toEqual(expected);
+  });
+
+  it.each(['constructor', 'toString', '__proto__'])('aggregates a raw prototype-like model %s without mutating prototypes', async (rawModelSlug) => {
+    const aggregator = createAggregator();
+    const item = message('synthetic', 'm', 'assistant', 'synthetic text', epochSeconds('2026-09-22T10:00:00Z'));
+    item.rawModelSlug = rawModelSlug;
+    await aggregator.acceptConversation(conversation('synthetic', 'Synthetic', [item]));
+    const result = structuredClone(aggregator.finish());
+    expect(result.byModel[rawModelSlug].usageByDay['2026-09-22'].outputTokens).toBe(result.totals.outputTokens);
+    expect(result.buckets.day['2026-09-22'].usageByDay['2026-09-22'][rawModelSlug].outputTokens).toBe(result.totals.outputTokens);
+    expect(Object.hasOwn(Object.prototype, 'outputTokens')).toBe(false);
+  });
   it('aggregates role, model, peak-day, time-bucket, and median metrics deterministically', async () => {
     const conversations = [
       conversation('c1', 'Synthetic one', [

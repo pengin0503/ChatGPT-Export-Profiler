@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ImportSessionState } from './useImportSession';
+import { formatMessage, useI18n } from '../../i18n';
+import { stageLabel } from './stageLabel';
 
 export interface ImportProgressProps {
   state: Extract<ImportSessionState, { status: 'running' }>;
@@ -7,6 +9,7 @@ export interface ImportProgressProps {
 }
 
 export function ImportProgress({ state, onCancel }: ImportProgressProps) {
+  const { t } = useI18n();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -21,26 +24,26 @@ export function ImportProgress({ state, onCancel }: ImportProgressProps) {
   return (
     <section className="import-progress" aria-live="polite" aria-labelledby="import-progress-heading">
       <div>
-        <p className="eyebrow">PROCESSING</p>
-        <h2 id="import-progress-heading">Local analysis in progress</h2>
+        <p className="eyebrow">{t('import.processingEyebrow')}</p>
+        <h2 id="import-progress-heading">{t('import.processing')}</h2>
       </div>
       <dl className="progress-metrics">
         <div>
-          <dt>Stage</dt>
-          <dd>{state.stage}</dd>
+          <dt>{t('import.stage')}</dt>
+          <dd>{stageLabel(t, state.stage)}</dd>
         </div>
         <div>
-          <dt>Progress</dt>
-          <dd>{state.processedConversations} conversations processed</dd>
+          <dt>{t('import.progress')}</dt>
+          <dd>{formatMessage(t('import.processed'), { count: state.processedConversations })}</dd>
         </div>
         <div>
-          <dt>Elapsed</dt>
-          <dd>{elapsedSeconds}s</dd>
+          <dt>{t('import.elapsed')}</dt>
+          <dd>{formatMessage(t('import.elapsedSeconds'), { seconds: elapsedSeconds })}</dd>
         </div>
       </dl>
       {state.warnings.length > 0 ? (
         <div className="warning-panel">
-          <strong>Warnings</strong>
+          <strong>{t('import.warnings')}</strong>
           <ul>
             {state.warnings.map((warning, index) => (
               <li key={`${warning}-${index}`}>{warning}</li>
@@ -49,7 +52,7 @@ export function ImportProgress({ state, onCancel }: ImportProgressProps) {
         </div>
       ) : null}
       <button type="button" className="secondary-action" onClick={onCancel}>
-        Cancel
+        {t('import.cancel')}
       </button>
     </section>
   );

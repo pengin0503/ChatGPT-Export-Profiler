@@ -61,7 +61,8 @@ export function detectToolEvents(metadata: unknown): NormalizedToolEvent[] {
   for (const rawType of collectIdentifiers(metadata)) {
     if (seen.has(rawType)) continue;
     seen.add(rawType);
-    const kind = TOOL_KIND_BY_RAW[rawType.toLowerCase()] ?? 'unknown';
+    const lookup = rawType.toLowerCase();
+    const kind = Object.prototype.hasOwnProperty.call(TOOL_KIND_BY_RAW, lookup) ? TOOL_KIND_BY_RAW[lookup] : 'unknown';
     events.push({ kind, rawType });
   }
 

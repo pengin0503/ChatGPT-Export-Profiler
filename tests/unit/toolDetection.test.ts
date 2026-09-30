@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { detectToolEvents } from '../../src/analysis/toolDetection';
 
 describe('detectToolEvents', () => {
+  it.each(['constructor', 'toString', '__proto__'])('keeps prototype-like tool id %s serializable and unknown', (rawType) => {
+    const events = detectToolEvents({ tool_type: rawType });
+    expect(events).toEqual([{ kind: 'unknown', rawType }]);
+    expect(structuredClone(events)).toEqual([{ kind: 'unknown', rawType }]);
+  });
+
   it('maps explicit known tool identifiers conservatively', () => {
     expect(detectToolEvents({ tool_name: 'web_search' })).toEqual([{ kind: 'web-search', rawType: 'web_search' }]);
     expect(detectToolEvents({ tool_type: 'file_search' })).toEqual([{ kind: 'file', rawType: 'file_search' }]);

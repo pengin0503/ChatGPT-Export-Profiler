@@ -28,6 +28,8 @@ export interface StoredConversationRecord {
 export interface StoredModelTokenUsage {
   inputTokens: number;
   outputTokens: number;
+  /** Added in schema v4. Absent in older completed analyses. */
+  otherTokens?: number;
 }
 
 export interface DailyConversationUsage {

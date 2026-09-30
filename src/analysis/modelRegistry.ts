@@ -19,12 +19,13 @@ export function resolveModel(raw: string, localAliases: ModelAliasOverrides = {}
     return { canonicalId: lookup, raw, confidence: 'exact' };
   }
 
-  const localAlias = localAliases[lookup]?.trim();
+  const localValue = Object.prototype.hasOwnProperty.call(localAliases, lookup) ? localAliases[lookup] : undefined;
+  const localAlias = typeof localValue === 'string' ? localValue.trim() : undefined;
   if (localAlias) {
     return { canonicalId: localAlias, raw, confidence: 'alias' };
   }
 
-  const aliased = MODEL_ALIASES[lookup];
+  const aliased = Object.prototype.hasOwnProperty.call(MODEL_ALIASES, lookup) ? MODEL_ALIASES[lookup] : undefined;
   if (aliased) {
     return { canonicalId: aliased, raw, confidence: 'alias' };
   }
