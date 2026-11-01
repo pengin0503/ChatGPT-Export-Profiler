@@ -61,7 +61,6 @@ The Vite build uses relative asset paths so the same `dist/` can be served from 
 
 A production build registers a local application-shell service worker when served from a compatible secure origin. After the PWA has been loaded and installed/cached, supported browsers can reopen the application without network access.
 
-This repository is private and does **not** use GitHub Pages. Repository-backed distribution is through immutable GitHub Releases and the downloadable offline package. Any hosted PWA validation must use a user-provided, explicitly approved secure origin; the application itself still does not upload imported export data.
 
 A standalone offline package can be built:
 
@@ -71,39 +70,23 @@ npm run make:offline
 
 The generated ZIP contains the built application plus a minimal Node static server. After extracting it, run the included server script; it binds to `127.0.0.1` only and does not add telemetry.
 
-## Development and verification
-
-```bash
-npm run typecheck
-npm run lint
-npm test
-npm run build
-npx playwright install --with-deps chromium firefox webkit
-npm run e2e
-```
-
-Large synthetic fixtures are generated deterministically and are never sourced from a real ChatGPT export:
-
-```bash
-npm run make:fixture:1k
-npm run make:fixture:10k
-npm run make:fixture:50k
-npm run test:performance
-```
-
-Generated large ZIPs are ignored by Git. The repository must never contain a real user export or extracted real conversation data.
-
 ## Browser coverage
 
 Automated E2E coverage runs against Chromium, Firefox, and WebKit. The suite also exercises iPad portrait/landscape viewports, touch-capable layouts, offline/PWA behavior, hostile synthetic content, and the complete v1 product flow.
 
 Automated WebKit/iPad viewport tests do **not** replace release testing on physical iPad Safari and iPad Orion. The v1 release checklist requires real-device verification before v1.0 is declared complete. Because this private repository does not publish Pages, physical-device PWA checks require a separately provided approved secure origin.
 
-## CI and delivery
+## 日本語
 
-- `.github/workflows/ci.yml` runs the main quality gates on pushes and pull requests targeting `main`.
-- `.github/workflows/performance-scale.yml` provides scheduled/manual 10k and 50k fully synthetic scale verification.
-- `.github/workflows/release.yml` runs the release quality gate for `v*` tags and attaches the versioned offline ZIP to the GitHub Release.
-- GitHub Pages is intentionally not configured for this private repository.
+ChatGPT Export Profilerは、ChatGPTのエクスポートZIPをブラウザ内で分析し、会話・モデル・時間帯・ツールの利用状況や推定コストを確認するアプリです。選択したZIPを分析サービスへアップロードせず、ブラウザ内で処理します。元のZIPやメッセージ本文はIndexedDBに保存しませんが、会話タイトル、日時、モデル名、集計値や設定などの派生データはローカルに保存される場合があります。保存・削除の詳細は[プライバシー](docs/privacy.md)を参照してください。
 
-CI and test fixtures are synthetic. User exports, generated analysis databases, and local browser data are not CI artifacts.
+表示値はエクスポートから直接確認できた値、算出値、仮定に基づく推定値を区別します。トークンやAPI換算費用は公式の請求額ではありません。[データ精度](docs/data-accuracy.md)も参照してください。
+
+ZIPを読み込むと、概要、モデル、時間帯、会話、費用、ツール、データ品質を確認し、集計結果をJSON・CSV・Markdownで出力できます。ローカル実行にはNode.js 22以上とnpmが必要です。
+
+```bash
+npm ci
+npm run dev
+```
+
+オフラインパッケージや対応ブラウザのPWAを利用する方法は下記の英語説明を参照してください。
